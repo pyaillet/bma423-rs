@@ -353,14 +353,14 @@ where
         use accelerometer::error::{Error, ErrorKind};
         let (x, y, z) = self
             .get_x_y_z()
-            .map_err(Error::new_with_cause(ErrorKind::Bus, Bma423Error::I2cError))?;
+            .map_err(|_e| Error::new_with_cause(ErrorKind::Bus, Bma423Error::I2cError))?;
         Ok(F32x3::new(x, y, z))
     }
 
     fn sample_rate(&mut self) -> Result<f32, accelerometer::Error<Bma423Error>> {
         use accelerometer::error::{Error, ErrorKind};
         match self.config {
-            Some(config) => match config {
+            Some(config) => match config.sample_rate {
                 AccelConfigOdr::Odr0p78 => Ok(25.0 / 32.0),
                 AccelConfigOdr::Odr1p5 => Ok(25.0 / 16.0),
                 AccelConfigOdr::Odr3p1 => Ok(25.0 / 8.0),
