@@ -1,4 +1,5 @@
 #![no_std]
+
 #[cfg(feature = "accel")]
 use accelerometer::{vector::F32x3, Accelerometer};
 
@@ -6,8 +7,6 @@ use embedded_hal::blocking::{
     delay::DelayUs,
     i2c::{Write, WriteRead},
 };
-
-use log::*;
 
 use bitmask_enum::bitmask;
 use num_enum::{FromPrimitive, IntoPrimitive};
@@ -28,6 +27,8 @@ enum Reg {
     AccYMSB = 0x15,
     AccZLSB = 0x16,
     AccZMSB = 0x17,
+
+    InterruptStatus = 0x1c,
 
     AccelConfig = 0x40,
     AccelRange = 0x41,
@@ -53,6 +54,17 @@ enum Reg {
     PowerConfiguration = 0x7c,
     PowerControl = 0x7d,
     Command = 0x7e,
+}
+
+#[bitmask(u8)]
+#[derive(Copy, Clone, Debug)]
+pub enum InterruptStatus {
+    StepCounterOut = Self(0b0000_0010),
+    ActivityTypeOut = Self(0b0000_0100),
+    WristTiltOut = Self(0b0000_1000),
+    WakeUpOut = Self(0b0010_0000),
+    AnyNoMotionOut = Self(0b0100_0000),
+    ErrorIntOut = Self(0b1000_0000),
 }
 
 #[allow(dead_code)]
@@ -128,11 +140,18 @@ const BMA423_DEFAULT_ADDRESS: u8 = 0x19;
 const BMA423_READ_WRITE_LEN: usize = 0x08;
 const GRAVITY_EARTH: f32 = 9.80665;
 
-#[derive(Debug)]
-pub enum Bma423Error {
+#[derive(Clone, Copy, Debug)]
+pub enum Error<E> {
+    BusError(E),
     I2cError,
     ConfigError,
     Uninitialized,
+}
+
+impl<E> core::convert::From<E> for Error<E> {
+    fn from(error: E) -> Self {
+        Error::BusError(error)
+    }
 }
 
 #[repr(u8)]
@@ -164,9 +183,9 @@ pub enum State {
     Initialized(ChipId),
 }
 
-impl<I2C> Bma423<I2C>
+impl<E, I2C> Bma423<I2C>
 where
-    I2C: Write + WriteRead,
+    I2C: Write<Error = E> + WriteRead<Error = E>,
 {
     pub fn new(i2c: I2C) -> Self {
         Self {
@@ -186,74 +205,56 @@ where
         }
     }
 
-    fn probe_chip(&mut self) -> Result<u8, <I2C as WriteRead>::Error> {
+    fn probe_chip(&mut self) -> Result<u8, Error<E>> {
         let mut data: [u8; 1] = [0; 1];
         self.i2c
             .write_read(self.address, &[Reg::ChipId.into()], &mut data)?;
         Ok(data[0])
     }
 
-    pub fn set_power_control(
-        &mut self,
-        value: PowerControlFlag,
-    ) -> Result<(), <I2C as Write>::Error> {
+    pub fn set_power_control(&mut self, value: PowerControlFlag) -> Result<(), Error<E>> {
         self.i2c
-            .write(self.address, &[Reg::PowerControl.into(), value.into()])
+            .write(self.address, &[Reg::PowerControl.into(), value.into()])?;
+        Ok(())
     }
 
-    pub fn set_power_config(
-        &mut self,
-        value: PowerConfigurationFlag,
-    ) -> Result<(), <I2C as Write>::Error> {
+    pub fn set_power_config(&mut self, value: PowerConfigurationFlag) -> Result<(), Error<E>> {
         self.i2c.write(
             self.address,
             &[Reg::PowerConfiguration.into(), value.into()],
-        )
+        )?;
+        Ok(())
     }
 
-    pub fn get_chip_id(&mut self) -> Result<ChipId, Bma423Error> {
+    pub fn get_chip_id(&mut self) -> Result<ChipId, Error<E>> {
         match self.state {
-            State::Uninitialized => Err(Bma423Error::Uninitialized),
+            State::Uninitialized => Err(Error::Uninitialized),
             State::Initialized(chip_id) => Ok(chip_id),
         }
     }
 
-    pub fn init(&mut self, delay: &mut impl DelayUs<u32>) -> Result<(), Bma423Error> {
-        /*
-        self.i2c
-            .write(
-                self.address,
-                &[Reg::Command.into(), Command::SoftReset.into()],
-            )
-            .map_err(|_e| Bma423Error::I2cError)?;
-        */
-
-        let chip_id = self.probe_chip().map_err(|_e| Bma423Error::I2cError)?;
+    pub fn init(&mut self, delay: &mut impl DelayUs<u32>) -> Result<(), Error<E>> {
+        let chip_id = self.probe_chip()?;
         self.state = State::Initialized(chip_id.into());
 
-        self.set_power_config(PowerConfigurationFlag::none())
-            .map_err(|_e| Bma423Error::I2cError)?;
+        self.set_power_config(PowerConfigurationFlag::none())?;
 
         delay.delay_us(500);
 
         self.i2c
-            .write(self.address, &[Reg::StartInitialization.into(), 0u8])
-            .map_err(|_e| Bma423Error::I2cError)?;
+            .write(self.address, &[Reg::StartInitialization.into(), 0u8])?;
 
-        self.stream_write(Reg::FeatureConfig, &config::BMA423_CONFIG_FILE)
-            .map_err(|_e| Bma423Error::I2cError)?;
+        self.stream_write(Reg::FeatureConfig, &config::BMA423_CONFIG_FILE)?;
 
         self.i2c
-            .write(self.address, &[Reg::StartInitialization.into(), 1u8])
-            .map_err(|_e| Bma423Error::I2cError)?;
+            .write(self.address, &[Reg::StartInitialization.into(), 1u8])?;
 
-        self.set_power_control(PowerControlFlag::Accelerometer)
-            .map_err(|_e| Bma423Error::I2cError)?;
+        self.set_power_control(PowerControlFlag::Accelerometer)?;
 
         Ok(())
     }
 
-    fn stream_write(&mut self, reg: Reg, data: &[u8]) -> Result<(), <I2C as Write>::Error> {
+    fn stream_write(&mut self, reg: Reg, data: &[u8]) -> Result<(), Error<E>> {
         let inc: usize = BMA423_READ_WRITE_LEN;
         let mut index: usize = 0;
         loop {
@@ -286,27 +287,25 @@ where
         bw: AccelConfigBandwidth,
         rm: AccelConfigPerfMode,
         g_range: AccelRange,
-    ) -> Result<(), Bma423Error> {
+    ) -> Result<(), Error<E>> {
         if rm == AccelConfigPerfMode::Continuous {
             if (bw as u8) > (AccelConfigBandwidth::NormAvg4 as u8) {
-                return Err(Bma423Error::ConfigError);
+                return Err(Error::ConfigError);
             }
         } else if rm == AccelConfigPerfMode::CicAvg {
             if (bw as u8) > (AccelConfigBandwidth::ResAvg128 as u8) {
-                return Err(Bma423Error::ConfigError);
+                return Err(Error::ConfigError);
             }
         } else {
-            return Err(Bma423Error::ConfigError);
+            return Err(Error::ConfigError);
         }
 
         let accel_config: u8 = odr as u8 | bw as u8 | rm as u8;
         let accel_range: u8 = g_range as u8;
         self.i2c
-            .write(self.address, &[Reg::AccelConfig.into(), accel_config])
-            .map_err(|_e| Bma423Error::I2cError)?;
+            .write(self.address, &[Reg::AccelConfig.into(), accel_config])?;
         self.i2c
-            .write(self.address, &[Reg::AccelRange.into(), accel_range])
-            .map_err(|_e| Bma423Error::I2cError)?;
+            .write(self.address, &[Reg::AccelRange.into(), accel_range])?;
 
         self.config = Some(Config {
             sample_rate: odr,
@@ -317,24 +316,48 @@ where
         Ok(())
     }
 
-    pub fn get_status(&mut self) -> Result<u8, <I2C as WriteRead>::Error> {
+    pub fn enable_interrupt(&mut self, int_stat: InterruptStatus) -> Result<(), Error<E>> {
+        let mut data = 0u8;
+        self.i2c
+            .write_read(self.address, &[Reg::InterruptStatus.into()], &mut [data])?;
+
+        data |= u8::from(int_stat);
+
+        self.i2c
+            .write(self.address, &[Reg::InterruptStatus.into(), data])?;
+
+        Ok(())
+    }
+
+    pub fn disable_interrupt(&mut self, int_stat: InterruptStatus) -> Result<(), Error<E>> {
+        let mut data = 0u8;
+        self.i2c
+            .write_read(self.address, &[Reg::InterruptStatus.into()], &mut [data])?;
+
+        data &= u8::from(int_stat.not());
+
+        self.i2c
+            .write(self.address, &[Reg::InterruptStatus.into(), data])?;
+
+        Ok(())
+    }
+
+    pub fn get_status(&mut self) -> Result<u8, Error<E>> {
         let mut data: [u8; 1] = [0; 1];
         self.i2c
             .write_read(self.address, &[Reg::Status.into()], &mut data)?;
         Ok(data[0])
     }
 
-    pub fn get_x_y_z(&mut self) -> Result<(f32, f32, f32), <I2C as WriteRead>::Error> {
-        info!("Reading x, y, z");
+    pub fn get_x_y_z(&mut self) -> Result<(f32, f32, f32), Error<E>> {
         let mut data: [u8; 6] = [0; 6];
         self.i2c
             .write_read(self.address, &[Reg::AccXLSB.into()], &mut data)?;
-        info!("Computing coords");
+
         let x: i16 = ((((data[1] as i16) << 8) as i16) | (data[0] as i16)) / 0x10;
         let y: i16 = ((((data[3] as i16) << 8) as i16) | (data[2] as i16)) / 0x10;
         let z: i16 = ((((data[5] as i16) << 8) as i16) | (data[4] as i16)) / 0x10;
 
-        info!("Returning result");
         Ok((
             lsb_to_ms2(x, 2.0, 12),
             lsb_to_ms2(y, 2.0, 12),
@@ -344,21 +367,19 @@ where
 }
 
 #[cfg(feature = "accel")]
-impl<I2C> Accelerometer for Bma423<I2C>
+impl<E, I2C> Accelerometer for Bma423<I2C>
 where
-    I2C: Write + WriteRead,
+    I2C: Write<Error = E> + WriteRead<Error = E>,
+    E: core::fmt::Debug,
 {
-    type Error = Bma423Error;
-    fn accel_norm(&mut self) -> Result<F32x3, accelerometer::Error<Bma423Error>> {
-        use accelerometer::error::{Error, ErrorKind};
-        let (x, y, z) = self
-            .get_x_y_z()
-            .map_err(|_e| Error::new_with_cause(ErrorKind::Bus, Bma423Error::I2cError))?;
+    type Error = Error<E>;
+
+    fn accel_norm(&mut self) -> Result<F32x3, accelerometer::Error<Error<E>>> {
+        let (x, y, z) = self.get_x_y_z()?;
         Ok(F32x3::new(x, y, z))
     }
 
-    fn sample_rate(&mut self) -> Result<f32, accelerometer::Error<Bma423Error>> {
-        use accelerometer::error::{Error, ErrorKind};
+    fn sample_rate(&mut self) -> Result<f32, accelerometer::Error<Error<E>>> {
         match self.config {
             Some(config) => match config.sample_rate {
                 AccelConfigOdr::Odr0p78 => Ok(25.0 / 32.0),
@@ -374,17 +395,14 @@ where
                 AccelConfigOdr::Odr800 => Ok(800.0),
                 AccelConfigOdr::Odr1k6 => Ok(1600.0),
             },
-            None => Err(Error::new_with_cause(
-                ErrorKind::Device,
-                Bma423Error::ConfigError,
-            )),
+            None => Err(accelerometer::Error::from(Error::ConfigError)),
         }
     }
 }
 
 #[inline(always)]
 fn lsb_to_ms2(val: i16, g_range: f32, bit_width: u8) -> f32 {
-    let half_scale: f32 = (1 << bit_width) as f32;
+    let half_scale: f32 = (1 << bit_width) as f32 / 2.0;
 
     GRAVITY_EARTH * val as f32 * g_range / half_scale
 }
