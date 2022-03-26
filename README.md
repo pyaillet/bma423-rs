@@ -1,7 +1,7 @@
 <p align="center">
-    <a href="https://github.com/pyaillet/ft6x36-rs/actions/workflows/ci.yml"><img src="https://github.com/pyaillet/ft6x36-rs/actions/workflows/ci.yml/badge.svg?branch=main" alt="Build status" /></a>
-    <a href="https://crates.io/crates/ft6x36"><img src="https://img.shields.io/crates/v/ft6x36.svg" alt="Crates.io"></a>
-    <a href="https://docs.rs/ft6x36"><img src="https://docs.rs/ft6x36/badge.svg" alt="Docs.rs"></a>
+    <a href="https://github.com/pyaillet/bma423-rs/actions/workflows/ci.yml"><img src="https://github.com/pyaillet/bma423-rs/actions/workflows/ci.yml/badge.svg?branch=main" alt="Build status" /></a>
+    <a href="https://crates.io/crates/bma423"><img src="https://img.shields.io/crates/v/bma423.svg" alt="Crates.io"></a>
+    <a href="https://docs.rs/bma423"><img src="https://docs.rs/bma423/badge.svg" alt="Docs.rs"></a>
 </p>
 
 # BMA423 Rust driver
