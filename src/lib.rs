@@ -57,18 +57,10 @@ enum Reg {
     Command = 0x7e,
 }
 
+/// Feature interrupt status
 #[bitmask(u8)]
 #[derive(Copy, Clone, Debug)]
 pub enum FeatureInterruptStatus {
-    /* Taken from the datasheet */
-    /*
-    StepCounterOut = Self(0b0000_0010),
-    ActivityTypeOut = Self(0b0000_0100),
-    WristTiltOut = Self(0b0000_1000),
-    WakeUpOut = Self(0b0010_0000),
-    AnyNoMotionOut = Self(0b0100_0000),
-    ErrorIntOut = Self(0b1000_0000),
-    */
     /* Taken from examples */
     SingleTap = Self(0b0000_0001),
     StepCounter = Self(0b0000_0010),
@@ -80,6 +72,7 @@ pub enum FeatureInterruptStatus {
     Error = Self(0b1000_0000),
 }
 
+/// Hardware interrupt status
 #[bitmask(u8)]
 #[derive(Copy, Clone, Debug)]
 pub enum HardwareInterruptStatus {
@@ -96,6 +89,7 @@ pub struct InterruptStatus {
     pub hardware: HardwareInterruptStatus,
 }
 
+/// Interrupt line
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum InterruptLine {
@@ -103,6 +97,7 @@ pub enum InterruptLine {
     Line2 = 0x02,
 }
 
+/// Features of the accelerometer
 #[bitmask(u8)]
 #[derive(Copy, Clone, Debug)]
 pub enum Features {
@@ -243,6 +238,7 @@ pub enum ChipId {
     Bma423 = 0x13,
 }
 
+/// Structure representing the Bma423 device
 pub struct Bma423<I2C> {
     address: u8,
     i2c: I2C,
@@ -250,6 +246,7 @@ pub struct Bma423<I2C> {
     config: Option<Config>,
 }
 
+/// Configuration of the device
 #[allow(dead_code)]
 #[derive(Copy, Clone, Debug)]
 pub struct Config {
@@ -268,6 +265,16 @@ impl<E, I2C> Bma423<I2C>
 where
     I2C: Write<Error = E> + WriteRead<Error = E>,
 {
+    /// Create a new Bma423 device with the default slave address
+    ///
+    /// # Arguments
+    ///
+    /// - `i2c` I2C bus used to communicate with the device
+    ///
+    /// # Returns
+    ///
+    /// - [Bma423 driver](Bma423) created
+    ///
     pub fn new(i2c: I2C) -> Self {
         Self {
             address: DEFAULT_ADDRESS,
@@ -277,7 +284,18 @@ where
         }
     }
 
-    pub fn new_with_address(address: u8, i2c: I2C) -> Self {
+    /// Create a new Bma423 device with the default slave address
+    ///
+    /// # Arguments
+    ///
+    /// - `i2c` I2C bus used to communicate with the device
+    /// - `address: address of the device
+    ///
+    /// # Returns
+    ///
+    /// - [Bma423 driver](Bma423) created
+    ///
+    pub fn new_with_address(i2c: I2C, address: u8) -> Self {
         Self {
             address,
             i2c,
@@ -519,6 +537,11 @@ where
         Ok(data[0])
     }
 
+    /// Get x, y, z acceleration
+    ///
+    /// # Returns:
+    ///
+    /// - (f32, f32, f32), represeting the acceleration values for (x, y, z) axis
     pub fn get_x_y_z(&mut self) -> Result<(f32, f32, f32), Error<E>> {
         let mut data: [u8; 6] = [0; 6];
         self.write_read(Reg::AccXLSB, &mut data)?;

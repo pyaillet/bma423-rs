@@ -1,6 +1,6 @@
 [package]
 name = "bma423"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 authors = ["Pierre-Yves Aillet <pyaillet@gmail.com>"]
 
@@ -12,5 +12,5 @@ accelerometer = { version = "^0.12", optional = true }
 bitmask-enum = { version = "^1.1" }
 
 [features]
-default = []
+default = [ "accel" ]
 accel = [ "accelerometer" ]
