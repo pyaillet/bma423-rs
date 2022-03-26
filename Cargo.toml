@@ -3,6 +3,12 @@ name = "bma423"
 version = "0.0.1"
 edition = "2021"
 authors = ["Pierre-Yves Aillet <pyaillet@gmail.com>"]
+categories = ["embedded", "hardware-support"]
+description = "Rust driver for Bma423 accelerometer"
+repository = "https://github.com/pyaillet/bma423-rs"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
