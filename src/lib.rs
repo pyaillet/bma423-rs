@@ -4,10 +4,7 @@
 use accelerometer::{vector::F32x3, Accelerometer};
 
 use derive_new::new;
-use embedded_hal::blocking::{
-    delay::DelayUs,
-    i2c::{Write, WriteRead},
-};
+use embedded_hal::{delay::DelayUs, i2c::I2c};
 
 use bitmask_enum::bitmask;
 use num_enum::{FromPrimitive, IntoPrimitive};
@@ -297,10 +294,7 @@ pub enum State {
     Initialized(ChipId),
 }
 
-impl<E, I2C> Bma423<I2C>
-where
-    I2C: Write<Error = E> + WriteRead<Error = E>,
-{
+impl<I2C: I2c> Bma423<I2C> {
     /// Create a new Bma423 device with the default slave address (0x18) and configuration.
     ///
     /// # Arguments
@@ -337,45 +331,48 @@ where
         }
     }
 
-    fn write(&mut self, data: &[u8]) -> Result<(), Error<E>> {
+    fn write(&mut self, data: &[u8]) -> Result<(), Error<I2C::Error>> {
         self.i2c.write(self.address, data)?;
         Ok(())
     }
 
-    fn write_read(&mut self, reg: Reg, data: &mut [u8]) -> Result<(), Error<E>> {
+    fn write_read(&mut self, reg: Reg, data: &mut [u8]) -> Result<(), Error<I2C::Error>> {
         self.i2c.write_read(self.address, &[reg.into()], data)?;
         Ok(())
     }
 
     /// Reads only a single byte from a register
-    fn read_register(&mut self, reg: Reg) -> Result<u8, Error<E>> {
+    fn read_register(&mut self, reg: Reg) -> Result<u8, Error<I2C::Error>> {
         let mut data = [0; 1];
         self.write_read(reg, &mut data)?;
         Ok(data[0])
     }
 
-    fn probe_chip(&mut self) -> Result<u8, Error<E>> {
+    fn probe_chip(&mut self) -> Result<u8, Error<I2C::Error>> {
         let mut data: [u8; 1] = [0; 1];
         self.write_read(Reg::ChipId, &mut data)?;
         Ok(data[0])
     }
 
-    pub fn set_power_control(&mut self, value: PowerControlFlag) -> Result<(), Error<E>> {
+    pub fn set_power_control(&mut self, value: PowerControlFlag) -> Result<(), Error<I2C::Error>> {
         self.write(&[Reg::PowerControl.into(), value.into()])
     }
 
-    pub fn set_power_config(&mut self, value: PowerConfigurationFlag) -> Result<(), Error<E>> {
+    pub fn set_power_config(
+        &mut self,
+        value: PowerConfigurationFlag,
+    ) -> Result<(), Error<I2C::Error>> {
         self.write(&[Reg::PowerConfiguration.into(), value.into()])
     }
 
-    pub fn get_chip_id(&mut self) -> Result<ChipId, Error<E>> {
+    pub fn get_chip_id(&mut self) -> Result<ChipId, Error<I2C::Error>> {
         match self.state {
             State::Uninitialized => Err(Error::Uninitialized),
             State::Initialized(chip_id) => Ok(chip_id),
         }
     }
 
-    pub fn init(&mut self, delay: &mut impl DelayUs<u32>) -> Result<(), Error<E>> {
+    pub fn init(&mut self, delay: &mut impl DelayUs) -> Result<(), Error<I2C::Error>> {
         let chip_id = self.probe_chip()?;
         self.state = State::Initialized(chip_id.into());
 
@@ -427,7 +424,7 @@ where
         Ok(())
     }
 
-    fn stream_write(&mut self, reg: Reg, data: &[u8]) -> Result<(), Error<E>> {
+    fn stream_write(&mut self, reg: Reg, data: &[u8]) -> Result<(), Error<I2C::Error>> {
         let inc: usize = READ_WRITE_LEN;
         let mut index: usize = 0;
         loop {
@@ -452,7 +449,7 @@ where
         Ok(())
     }
 
-    pub fn set_accel_config(&mut self, config: Config) -> Result<(), Error<E>> {
+    pub fn set_accel_config(&mut self, config: Config) -> Result<(), Error<I2C::Error>> {
         if config.performance_mode == AccelConfigPerfMode::Continuous {
             if (config.bandwidth as u8) > (AccelConfigBandwidth::NormAvg4 as u8) {
                 return Err(Error::ConfigError);
@@ -475,7 +472,7 @@ where
         Ok(())
     }
 
-    pub fn enable_feature(&mut self, features: Features) -> Result<(), Error<E>> {
+    pub fn enable_feature(&mut self, features: Features) -> Result<(), Error<I2C::Error>> {
         let mut feature_config: [u8; FEATURE_SIZE + 1] = [0; FEATURE_SIZE + 1];
         self.write_read(Reg::FeatureConfig, &mut feature_config[1..FEATURE_SIZE + 1])?;
 
@@ -508,7 +505,7 @@ where
         Ok(())
     }
 
-    pub fn disable_feature(&mut self, features: Features) -> Result<(), Error<E>> {
+    pub fn disable_feature(&mut self, features: Features) -> Result<(), Error<I2C::Error>> {
         let mut feature_config: [u8; FEATURE_SIZE + 1] = [0; FEATURE_SIZE + 1];
         self.write_read(Reg::FeatureConfig, &mut feature_config[1..FEATURE_SIZE + 1])?;
 
@@ -541,7 +538,7 @@ where
         Ok(())
     }
 
-    pub fn get_features_mem(&mut self) -> Result<[u8; FEATURE_SIZE], Error<E>> {
+    pub fn get_features_mem(&mut self) -> Result<[u8; FEATURE_SIZE], Error<I2C::Error>> {
         // TODO: Get FEATURE_IN memory
         let mut feature_config: [u8; FEATURE_SIZE] = [0; FEATURE_SIZE];
         self.write_read(Reg::FeatureConfig, &mut feature_config)?;
@@ -549,22 +546,22 @@ where
     }
 
     // TODO: Make this permanent? If kept may need to abstract error
-    pub fn get_error(&mut self) -> Result<u8, Error<E>> {
+    pub fn get_error(&mut self) -> Result<u8, Error<I2C::Error>> {
         self.read_register(Reg::Error)
     }
 
     // TODO: Temporary? If kept may need to abstract status
-    pub fn get_internal_status(&mut self) -> Result<u8, Error<E>> {
+    pub fn get_internal_status(&mut self) -> Result<u8, Error<I2C::Error>> {
         self.read_register(Reg::InternalStatus)
     }
 
     // TODO: Temporary? If kept may need to abstract error
-    pub fn get_internal_error(&mut self) -> Result<u8, Error<E>> {
+    pub fn get_internal_error(&mut self) -> Result<u8, Error<I2C::Error>> {
         self.read_register(Reg::InternalError)
     }
 
     // TODO: Test function to see if we can get feature interrupts to work at all
-    pub fn setup_any_motion_interrupt(&mut self) -> Result<(), Error<E>> {
+    pub fn setup_any_motion_interrupt(&mut self) -> Result<(), Error<I2C::Error>> {
         // Enable any motion feature for all axes
         // Assumes little endian
         let feature_config = [Reg::FeatureConfig.into(), 0xAA, 0x00, 0x05, 0b1110_0000];
@@ -584,7 +581,7 @@ where
     }
 
     // TODO
-    pub fn setup_tap_detection_interrupt(&mut self) -> Result<(), Error<E>> {
+    pub fn setup_tap_detection_interrupt(&mut self) -> Result<(), Error<I2C::Error>> {
         // TODO: Note that this does not seem to work correctly
         //self.enable_feature(Features::SingleTap)?;
 
@@ -609,7 +606,7 @@ where
     }
 
     // TODO delete probably
-    pub fn test_regs(&mut self) -> Result<[u8; 3], Error<E>> {
+    pub fn test_regs(&mut self) -> Result<[u8; 3], Error<I2C::Error>> {
         let a = self.read_register(Reg::Interrupt1IOCtl)?;
         let b = self.read_register(Reg::InterruptConfig)?;
         let c = self.read_register(Reg::FeatureInterrupt1Mapping)?;
@@ -621,7 +618,7 @@ where
         line: InterruptLine,
         interrupts: FeatureInterruptStatus,
         enable: bool,
-    ) -> Result<(), Error<E>> {
+    ) -> Result<(), Error<I2C::Error>> {
         let mut data: [u8; 2] = [0; 2];
         let addr = match line {
             InterruptLine::Line1 => Reg::FeatureInterrupt1Mapping,
@@ -644,7 +641,7 @@ where
         &mut self,
         interrupts: HardwareInterruptStatus,
         enable: bool,
-    ) -> Result<(), Error<E>> {
+    ) -> Result<(), Error<I2C::Error>> {
         let mut data: [u8; 1] = [0];
 
         self.write_read(Reg::HardwareInterruptMapping, &mut data)?;
@@ -660,7 +657,7 @@ where
         Ok(())
     }
 
-    pub fn read_interrupt_status(&mut self) -> Result<InterruptStatus, Error<E>> {
+    pub fn read_interrupt_status(&mut self) -> Result<InterruptStatus, Error<I2C::Error>> {
         let mut data: [u8; 2] = [0; 2];
         self.write_read(Reg::FeatureInterruptStatus, &mut data)?;
         Ok(InterruptStatus {
@@ -669,14 +666,14 @@ where
         })
     }
 
-    pub fn get_status(&mut self) -> Result<u8, Error<E>> {
+    pub fn get_status(&mut self) -> Result<u8, Error<I2C::Error>> {
         let mut data: [u8; 1] = [0; 1];
         self.write_read(Reg::Status, &mut data)?;
         Ok(data[0])
     }
 
     /// Returns the normalized accelerations in g.
-    fn accel_norm_int(&mut self) -> Result<(f32, f32, f32), Error<E>> {
+    fn accel_norm_int(&mut self) -> Result<(f32, f32, f32), Error<I2C::Error>> {
         let mut data: [u8; 6] = [0; 6];
         self.write_read(Reg::AccXLSB, &mut data)?;
 
@@ -694,7 +691,7 @@ where
     }
 
     /// Returns the current x, y, z accelerations in absolute units of m/s^2.
-    pub fn accel_abs(&mut self) -> Result<(f32, f32, f32), Error<E>> {
+    pub fn accel_abs(&mut self) -> Result<(f32, f32, f32), Error<I2C::Error>> {
         let accel = self.accel_norm_int()?;
 
         Ok((
@@ -706,18 +703,14 @@ where
 }
 
 #[cfg(feature = "accel")]
-impl<E, I2C> Accelerometer for Bma423<I2C>
-where
-    I2C: Write<Error = E> + WriteRead<Error = E>,
-    E: core::fmt::Debug,
-{
-    type Error = Error<E>;
+impl<I2C: I2c> Accelerometer for Bma423<I2C> {
+    type Error = Error<I2C::Error>;
 
-    fn accel_norm(&mut self) -> Result<F32x3, accelerometer::Error<Error<E>>> {
+    fn accel_norm(&mut self) -> Result<F32x3, accelerometer::Error<Error<I2C::Error>>> {
         Ok(self.accel_norm_int()?.into())
     }
 
-    fn sample_rate(&mut self) -> Result<f32, accelerometer::Error<Error<E>>> {
+    fn sample_rate(&mut self) -> Result<f32, accelerometer::Error<Error<I2C::Error>>> {
         match self.config.sample_rate {
             AccelConfigOdr::Odr0p78 => Ok(25.0 / 32.0),
             AccelConfigOdr::Odr1p5 => Ok(25.0 / 16.0),
