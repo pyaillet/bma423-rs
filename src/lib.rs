@@ -1,16 +1,28 @@
+//! Driver for the BMA323 accelerometer chip by BOSCH.
+//!
+//! Refer to the [datasheet](https://www.mouser.com/datasheet/2/783/BSCH_S_A0010021471_1-2525113.pdf)
+//! and the [features application note](https://www.bosch-sensortec.com/media/boschsensortec/downloads/application_notes_1/bst-mas-an032-00.pdf)
+//! for more details about the device and its rich feature set.
+//! Be aware that the current version of the datasheet is 2.0,
+//! and there are many copies of the incorrect version 1.1
+//! floating around online.
 #![no_std]
+
+use core::ops::RangeInclusive;
 
 #[cfg(feature = "accel")]
 use accelerometer::{vector::F32x3, Accelerometer};
-
+use bitmask_enum::bitmask;
 use derive_new::new;
 use embedded_hal::{delay::DelayUs, i2c::I2c};
-
-use bitmask_enum::bitmask;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
 mod config;
+pub mod features;
 
+use features::{EditFeatures, FEATURE_SIZE};
+
+/// Chip registers
 #[allow(dead_code)]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, IntoPrimitive)]
@@ -57,116 +69,6 @@ enum Reg {
     Command = 0x7e,
 }
 
-/// Feature interrupt status
-#[bitmask(u8)]
-#[derive(Copy, Clone, Debug)]
-pub enum FeatureInterruptStatus {
-    /* Taken from examples */
-    SingleTap = Self(0b0000_0001),
-    StepCounter = Self(0b0000_0010),
-    Activity = Self(0b0000_0100),
-    WristWear = Self(0b0000_1000),
-    DoubleTap = Self(0b0001_0000),
-    AnyMotion = Self(0b0010_0000),
-    NoMotion = Self(0b0100_0000),
-    Error = Self(0b1000_0000),
-}
-
-/// Hardware interrupt status
-#[bitmask(u8)]
-#[derive(Copy, Clone, Debug)]
-pub enum HardwareInterruptStatus {
-    FifoFull = Self(0x01),
-    FifoWatermark = Self(0x02),
-    DataReady = Self(0x04),
-    AuxiliaryDataReady = Self(0x20),
-    AcceleratorDataReady = Self(0x80),
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct InterruptStatus {
-    pub feature: FeatureInterruptStatus,
-    pub hardware: HardwareInterruptStatus,
-}
-
-/// Interrupt line
-#[repr(u8)]
-#[derive(Copy, Clone, Debug, IntoPrimitive)]
-pub enum InterruptLine {
-    Line1 = 0x01,
-    Line2 = 0x02,
-}
-
-/// Features of the accelerometer
-#[bitmask(u8)]
-#[derive(Copy, Clone, Debug)]
-// TODO: Need to add any/no motion features
-pub enum Features {
-    StepCounter = Self(0b0000_0001),
-    StepActivity = Self(0b0000_0010),
-    WristWear = Self(0b0000_0100),
-    SingleTap = Self(0b0000_1000),
-    DoubleTap = Self(0b0001_0000),
-}
-
-#[repr(u8)]
-#[derive(Copy, Clone, Debug)]
-pub enum FeatureOffset {
-    // TODO: These are incorrect per the data sheet.
-    AnyMotion = 0x00,
-    NoMotion = 0x04,
-    StepCounterParam = 0x08,
-    StepCounter = 0x3A,
-    SingleTap = 0x3C,
-    DoubleTap = 0x3E,
-    WristWear = 0x40,
-    ConfigId = 0x42,
-    AxesRemap = 0x44,
-}
-
-#[bitmask(u8)]
-#[derive(Copy, Clone, Debug)]
-pub enum FeatureEnableMask {
-    StepCounter = Self(0b0001_0000),
-    StepActivity = Self(0b0010_0000),
-    WristWear = Self(0b0000_0001),
-    SingleTap = Self(0b0000_0001),
-    DoubleTap = Self(0b0000_0001),
-}
-
-#[repr(u8)]
-#[derive(Copy, Clone, Debug, IntoPrimitive, FromPrimitive)]
-enum Activity {
-    Stationary = 0x00,
-    Walking = 0x01,
-    Running = 0x02,
-    #[default]
-    Invalid = 0x03,
-}
-
-#[allow(dead_code)]
-#[repr(u8)]
-#[derive(Copy, Clone, Debug, IntoPrimitive)]
-enum Command {
-    NvmProg = 0xa0,
-    FifoFlush = 0xb0,
-    SoftReset = 0xb6,
-}
-
-#[bitmask(u8)]
-#[derive(Copy, Clone, Debug)]
-pub enum PowerControlFlag {
-    Accelerometer = Self(0b0000_0100),
-    Auxiliary = Self(0b0000_0001),
-}
-
-#[bitmask(u8)]
-#[derive(Copy, Clone, Debug)]
-pub enum PowerConfigurationFlag {
-    AdvancedPowerSave = Self(0b0000_0001),
-    FifoSelfWakeUp = Self(0b0000_0010),
-}
-
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum AccelConfigOdr {
@@ -205,7 +107,7 @@ pub enum AccelConfigPerfMode {
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum AccelRange {
     Range2g = 0x00,
     Range4g = 0x01,
@@ -223,8 +125,116 @@ impl AccelRange {
     }
 }
 
+/// Feature interrupt status
+#[bitmask(u8)]
+#[derive(Copy, Clone, Debug, IntoPrimitive)]
+pub enum FeatureInterruptStatus {
+    /* Taken from examples */
+    SingleTap = Self(0b0000_0001),
+    StepCounter = Self(0b0000_0010),
+    Activity = Self(0b0000_0100),
+    WristWear = Self(0b0000_1000),
+    DoubleTap = Self(0b0001_0000),
+    AnyMotion = Self(0b0010_0000),
+    NoMotion = Self(0b0100_0000),
+    Error = Self(0b1000_0000),
+}
+
+/// Hardware interrupt status
+#[bitmask(u8)]
+#[derive(Copy, Clone, Debug, IntoPrimitive)]
+pub enum HardwareInterruptStatus {
+    FifoFull = Self(0x01),
+    FifoWatermark = Self(0x02),
+    DataReady = Self(0x04),
+    AuxiliaryDataReady = Self(0x20),
+    AcceleratorDataReady = Self(0x80),
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct InterruptStatus {
+    pub feature: FeatureInterruptStatus,
+    pub hardware: HardwareInterruptStatus,
+}
+
+/// Interrupt line
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, IntoPrimitive)]
+pub enum InterruptLine {
+    Line1 = 0,
+    Line2 = 1,
+}
+
+/// Interrupt trigger condition when configured as an input
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, IntoPrimitive)]
+pub enum InterruptTriggerCondition {
+    Level = 0x00,
+    Edge = 0x01,
+}
+
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, IntoPrimitive)]
+pub enum InterruptLevel {
+    ActiveLow = 0x00,
+    ActiveHigh = 0x02,
+}
+
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, IntoPrimitive)]
+pub enum InterruptOutputBehavior {
+    PushPull = 0x00,
+    OpenDrain = 0x04,
+}
+
+#[derive(Clone, Debug)]
+pub enum InterruptDirection {
+    Input(InterruptTriggerCondition),
+    Output(InterruptOutputBehavior, InterruptLevel),
+}
+impl InterruptDirection {
+    fn bit_mask(&self) -> u8 {
+        match self {
+            InterruptDirection::Input(_) => 0x10,
+            InterruptDirection::Output(_, _) => 0x08,
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, IntoPrimitive, FromPrimitive)]
+enum Activity {
+    Stationary = 0x00,
+    Walking = 0x01,
+    Running = 0x02,
+    #[default]
+    Invalid = 0x03,
+}
+
+#[allow(dead_code)]
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, IntoPrimitive)]
+enum Command {
+    NvmProg = 0xa0,
+    FifoFlush = 0xb0,
+    SoftReset = 0xb6,
+}
+
+#[bitmask(u8)]
+#[derive(Copy, Clone, Debug, IntoPrimitive)]
+pub enum PowerControlFlag {
+    Accelerometer = Self(0b0000_0100),
+    Auxiliary = Self(0b0000_0001),
+}
+
+#[bitmask(u8)]
+#[derive(Copy, Clone, Debug, IntoPrimitive)]
+pub enum PowerConfigurationFlag {
+    AdvancedPowerSave = Self(0b0000_0001),
+    FifoSelfWakeUp = Self(0b0000_0010),
+}
+
 const DEFAULT_ADDRESS: u8 = 0x18;
-const FEATURE_SIZE: usize = 0x46;
 const READ_WRITE_LEN: usize = 0x08;
 const GRAVITY_EARTH: f32 = 9.80665;
 
@@ -235,6 +245,7 @@ pub enum Error<E> {
     ConfigError,
     BadInternal(u8),
     Uninitialized,
+    BadArgument,
 }
 
 impl<E> core::convert::From<E> for Error<E> {
@@ -280,7 +291,6 @@ impl Default for Config {
     /// * Sample rate: 50 Hz
     fn default() -> Self {
         Self {
-            // TODO: Keep these? If so change doc comment
             bandwidth: AccelConfigBandwidth::NormAvg4,
             range: AccelRange::Range2g,
             performance_mode: AccelConfigPerfMode::CicAvg,
@@ -377,7 +387,7 @@ impl<I2C: I2c> Bma423<I2C> {
         self.state = State::Initialized(chip_id.into());
 
         // First, perform a soft reset followed by an arbitrary delay
-        self.write(&[Reg::Command.into(), 0xb6])?;
+        self.write(&[Reg::Command.into(), Command::SoftReset.into()])?;
         delay.delay_us(1000);
 
         // Disable advanced power saving mode
@@ -389,23 +399,15 @@ impl<I2C: I2c> Bma423<I2C> {
         // Enter config file writing mode
         self.write(&[Reg::StartInitialization.into(), 0])?;
 
-        // TODO: Temporarily just write all zeros to disabled everything
-        // while we try to get something working.
-        /* let mut data = [0; FEATURE_SIZE + 1];
-        data[0] = Reg::FeatureConfig.into();
-        // Correct default axes mapping
-        //data[10 + 1] = 0x12;
-        //data[0x3E + 1] = 0x88;
-        self.write(&data)?; */
-
         // Stream write the config file
         self.stream_write(Reg::FeatureConfig, &config::BMA423_CONFIG_FILE)?;
 
         // Exit config file writing mode
         self.write(&[Reg::StartInitialization.into(), 1u8])?;
 
-        // Wait until the chip is ready and initialized with timeout
-        let mut time_ms: usize = 500;
+        // Wait until the chip is ready and initialized with timeout.
+        // This is supposed to take no longer than 140-150 ms.
+        let mut time_ms: usize = 200;
         while time_ms > 0 && (self.read_register(Reg::InternalStatus)? & 0x0F) != 0x01 {
             delay.delay_us(1000);
             time_ms -= 1;
@@ -472,146 +474,59 @@ impl<I2C: I2c> Bma423<I2C> {
         Ok(())
     }
 
-    pub fn enable_feature(&mut self, features: Features) -> Result<(), Error<I2C::Error>> {
-        let mut feature_config: [u8; FEATURE_SIZE + 1] = [0; FEATURE_SIZE + 1];
-        self.write_read(Reg::FeatureConfig, &mut feature_config[1..FEATURE_SIZE + 1])?;
+    /// Obtains an [`EditFeatures`] that can be used to configure the chip features.
+    pub fn edit_features(&mut self) -> Result<EditFeatures<'_, I2C>, Error<I2C::Error>> {
+        let mut register = [0; FEATURE_SIZE + 1];
+        self.write_read(Reg::FeatureConfig, &mut register[1..FEATURE_SIZE + 1])?;
 
-        if features.contains(Features::StepCounter) {
-            let idx = FeatureOffset::StepCounter as usize + 1;
-            feature_config[idx] |= u8::from(FeatureEnableMask::StepCounter);
-        }
-        if features.contains(Features::StepActivity) {
-            let idx = FeatureOffset::StepCounter as usize + 1;
-            feature_config[idx] |= u8::from(FeatureEnableMask::StepActivity);
-        }
+        Ok(EditFeatures {
+            register,
+            driver: self,
+        })
+    }
 
-        if features.contains(Features::WristWear) {
-            let idx = FeatureOffset::WristWear as usize;
-            feature_config[idx] |= u8::from(FeatureEnableMask::WristWear);
-        }
-
-        if features.contains(Features::SingleTap) {
-            let idx = FeatureOffset::SingleTap as usize;
-            feature_config[idx] |= u8::from(FeatureEnableMask::SingleTap);
-        }
-        if features.contains(Features::DoubleTap) {
-            let idx = FeatureOffset::DoubleTap as usize;
-            feature_config[idx] |= u8::from(FeatureEnableMask::DoubleTap);
-        }
-
-        feature_config[0] = Reg::FeatureConfig.into();
-        self.write(&feature_config)?;
+    /// Configures the electrical behavior of an interrupt pin.
+    ///
+    /// # Arguments
+    ///
+    /// - `line` Which interrupt line to configure.
+    /// - `direction` Whether to configure the interrupt line as
+    /// an input or an output.
+    pub fn set_interrupt_config(
+        &mut self,
+        line: InterruptLine,
+        direction: InterruptDirection,
+    ) -> Result<(), Error<I2C::Error>> {
+        let reg = direction.bit_mask()
+            | match direction {
+                InterruptDirection::Input(tc) => u8::from(tc),
+                InterruptDirection::Output(ob, l) => u8::from(ob) | u8::from(l),
+            };
+        let addr = match line {
+            InterruptLine::Line1 => Reg::Interrupt1IOCtl,
+            InterruptLine::Line2 => Reg::Interrupt2IOCtl,
+        };
+        self.write(&[addr.into(), reg])?;
 
         Ok(())
     }
 
-    pub fn disable_feature(&mut self, features: Features) -> Result<(), Error<I2C::Error>> {
-        let mut feature_config: [u8; FEATURE_SIZE + 1] = [0; FEATURE_SIZE + 1];
-        self.write_read(Reg::FeatureConfig, &mut feature_config[1..FEATURE_SIZE + 1])?;
-
-        if features.contains(Features::StepCounter) {
-            let idx = FeatureOffset::StepCounter as usize + 1;
-            feature_config[idx] &= u8::from(FeatureEnableMask::StepCounter.not());
-        }
-        if features.contains(Features::StepActivity) {
-            let idx = FeatureOffset::StepCounter as usize + 1;
-            feature_config[idx] &= u8::from(FeatureEnableMask::StepActivity.not());
-        }
-
-        if features.contains(Features::WristWear) {
-            let idx = FeatureOffset::WristWear as usize;
-            feature_config[idx] &= u8::from(FeatureEnableMask::WristWear.not());
-        }
-
-        if features.contains(Features::SingleTap) {
-            let idx = FeatureOffset::SingleTap as usize;
-            feature_config[idx] &= u8::from(FeatureEnableMask::SingleTap.not());
-        }
-        if features.contains(Features::DoubleTap) {
-            let idx = FeatureOffset::DoubleTap as usize;
-            feature_config[idx] &= u8::from(FeatureEnableMask::DoubleTap.not());
-        }
-
-        feature_config[0] = Reg::FeatureConfig.into();
-        self.write(&feature_config)?;
-
-        Ok(())
-    }
-
-    pub fn get_features_mem(&mut self) -> Result<[u8; FEATURE_SIZE], Error<I2C::Error>> {
-        // TODO: Get FEATURE_IN memory
+    // TODO: These are for verifying that feature and other registers are being set correctly
+    /* pub fn get_features_mem(&mut self) -> Result<[u8; FEATURE_SIZE], Error<I2C::Error>> {
+        // TODO: Get FEATURES_IN memory
         let mut feature_config: [u8; FEATURE_SIZE] = [0; FEATURE_SIZE];
         self.write_read(Reg::FeatureConfig, &mut feature_config)?;
         Ok(feature_config)
     }
 
-    // TODO: Make this permanent? If kept may need to abstract error
-    pub fn get_error(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_register(Reg::Error)
-    }
-
-    // TODO: Temporary? If kept may need to abstract status
-    pub fn get_internal_status(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_register(Reg::InternalStatus)
-    }
-
-    // TODO: Temporary? If kept may need to abstract error
-    pub fn get_internal_error(&mut self) -> Result<u8, Error<I2C::Error>> {
-        self.read_register(Reg::InternalError)
-    }
-
-    // TODO: Test function to see if we can get feature interrupts to work at all
-    pub fn setup_any_motion_interrupt(&mut self) -> Result<(), Error<I2C::Error>> {
-        // Enable any motion feature for all axes
-        // Assumes little endian
-        let feature_config = [Reg::FeatureConfig.into(), 0xAA, 0x00, 0x05, 0b1110_0000];
-        self.write(&feature_config)?;
-
-        // Set interrupt pin behavior in INT1_IO_CTRL
-        self.write(&[Reg::Interrupt1IOCtl.into(), 0b0000_1010])?;
-
-        // Setup interrupt latching in INT_LATCH
-        self.write(&[Reg::InterruptConfig.into(), 0b0000_0001])?;
-
-        // Map feature to interrupt in INT1_MAP
-        // Note that this driver does currently support this but it's functioning has not been verified
-        self.write(&[Reg::FeatureInterrupt1Mapping.into(), 0b0010_0000])?;
-
-        Ok(())
-    }
-
-    // TODO
-    pub fn setup_tap_detection_interrupt(&mut self) -> Result<(), Error<I2C::Error>> {
-        // TODO: Note that this does not seem to work correctly
-        //self.enable_feature(Features::SingleTap)?;
-
-        // So we do it manually for now
-        let mut feature_config = [0; FEATURE_SIZE + 1];
-        self.write_read(Reg::FeatureConfig, &mut feature_config[1..])?;
-        feature_config[0] = Reg::FeatureConfig.into();
-        feature_config[0x3C + 1] |= 0x01;
-        self.write(&feature_config)?;
-
-        // Set interrupt pin behavior in INT2_IO_CTRL
-        self.write(&[Reg::Interrupt2IOCtl.into(), 0b0000_1010])?;
-
-        // Setup interrupt latching in INT_LATCH
-        self.write(&[Reg::InterruptConfig.into(), 0b0000_0001])?;
-
-        // Map feature to interrupt in INT2_MAP
-        // Note that this driver does currently support this but it's functioning has not been verified
-        self.write(&[Reg::FeatureInterrupt2Mapping.into(), 0b0000_0001])?;
-
-        Ok(())
-    }
-
     // TODO delete probably
-    pub fn test_regs(&mut self) -> Result<[u8; 3], Error<I2C::Error>> {
+    pub fn test_regs(&mut self) -> Result<[u8; 4], Error<I2C::Error>> {
         let a = self.read_register(Reg::Interrupt1IOCtl)?;
-        let b = self.read_register(Reg::InterruptConfig)?;
+        let b = self.read_register(Reg::Interrupt2IOCtl)?;
         let c = self.read_register(Reg::FeatureInterrupt1Mapping)?;
-        Ok([a, b, c])
-    }
+        let d = self.read_register(Reg::FeatureInterrupt2Mapping)?;
+        Ok([a, b, c, d])
+    } */
 
     pub fn map_feature_interrupt(
         &mut self,
@@ -619,20 +534,19 @@ impl<I2C: I2c> Bma423<I2C> {
         interrupts: FeatureInterruptStatus,
         enable: bool,
     ) -> Result<(), Error<I2C::Error>> {
-        let mut data: [u8; 2] = [0; 2];
         let addr = match line {
             InterruptLine::Line1 => Reg::FeatureInterrupt1Mapping,
             InterruptLine::Line2 => Reg::FeatureInterrupt2Mapping,
         };
-        self.write_read(Reg::FeatureInterrupt1Mapping, &mut data)?;
+        let mut reg = self.read_register(addr)?;
 
         if enable {
-            data[line as usize] |= u8::from(interrupts);
+            reg |= u8::from(interrupts);
         } else {
-            data[line as usize] &= u8::from(interrupts.not());
+            reg &= u8::from(interrupts.not());
         }
 
-        self.write(&[addr.into(), data[line as usize]])?;
+        self.write(&[addr.into(), reg])?;
 
         Ok(())
     }
