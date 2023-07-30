@@ -6,7 +6,7 @@ use core::ops::RangeInclusive;
 
 use bitmask_enum::bitmask;
 
-use crate::{Error, Reg};
+use crate::{Error, FullPower, Reg};
 
 pub(crate) const FEATURE_SIZE: usize = 70;
 
@@ -15,13 +15,13 @@ pub(crate) const FEATURE_SIZE: usize = 70;
 enum FeatureOffset {
     AnyMotion = 0x00,
     NoMotion = 0x04,
-    StepCounterParam = 0x08,
-    StepCounter = 0x3A,
+    //StepCounterParam = 0x08,
+    //StepCounter = 0x3A,
     SingleTap = 0x3C,
     DoubleTap = 0x3E,
-    WristWear = 0x40,
-    ConfigId = 0x42,
-    AxesRemap = 0x44,
+    //WristWear = 0x40,
+    //ConfigId = 0x42,
+    //AxesRemap = 0x44,
 }
 
 /// Which motion feature
@@ -70,7 +70,7 @@ pub enum TapFeature {
 /// effect.
 pub struct EditFeatures<'a, I2C> {
     pub(crate) register: [u8; FEATURE_SIZE + 1],
-    pub(crate) driver: &'a mut crate::Bma423<I2C>,
+    pub(crate) driver: &'a mut crate::Bma423<I2C, FullPower>,
 }
 impl<I2C: embedded_hal::i2c::I2c> EditFeatures<'_, I2C> {
     /// Allows editing the features register without the offset.
@@ -132,7 +132,7 @@ impl<I2C: embedded_hal::i2c::I2c> EditFeatures<'_, I2C> {
 
     /// Sets the tap detection feature configuration.
     ///
-    /// The features can be enabled using [`enable_feature`].
+    /// The features can be enabled using [`edit_feature`](crate::Bma423::edit_features).
     ///
     /// # Arguments
     ///

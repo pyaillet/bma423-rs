@@ -7,8 +7,11 @@
 //! and there are many copies of the incorrect version 1.1
 //! floating around online.
 #![no_std]
-
-use core::ops::RangeInclusive;
+// NOTE: Evidently there is no way to document bitmask enums,
+// nor can these warnings be disabled for them, so these
+// should be used as needed but commented out for commits.
+#![warn(missing_docs)]
+#![warn(clippy::missing_docs_in_private_items)]
 
 #[cfg(feature = "accel")]
 use accelerometer::{vector::F32x3, Accelerometer};
@@ -106,6 +109,10 @@ pub enum AccelConfigPerfMode {
     Continuous = 0x80,
 }
 
+/// Accelerometer acceleration vector range.
+///
+/// Values measured outside this range will be clipped to
+/// the range.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum AccelRange {
@@ -125,7 +132,7 @@ impl AccelRange {
     }
 }
 
-/// Feature interrupt status
+/// Feature interrupt status.
 #[bitmask(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum FeatureInterruptStatus {
@@ -140,7 +147,7 @@ pub enum FeatureInterruptStatus {
     Error = Self(0b1000_0000),
 }
 
-/// Hardware interrupt status
+/// Hardware interrupt status.
 #[bitmask(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum HardwareInterruptStatus {
@@ -151,13 +158,14 @@ pub enum HardwareInterruptStatus {
     AcceleratorDataReady = Self(0x80),
 }
 
+/// Interrupt status structure.
 #[derive(Copy, Clone, Debug)]
 pub struct InterruptStatus {
     pub feature: FeatureInterruptStatus,
     pub hardware: HardwareInterruptStatus,
 }
 
-/// Interrupt line
+/// Which interrupt line.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum InterruptLine {
@@ -165,7 +173,7 @@ pub enum InterruptLine {
     Line2 = 1,
 }
 
-/// Interrupt trigger condition when configured as an input
+/// Interrupt trigger condition when configured as an input.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum InterruptTriggerCondition {
@@ -173,6 +181,7 @@ pub enum InterruptTriggerCondition {
     Edge = 0x01,
 }
 
+/// Interrupt pin output level.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum InterruptLevel {
@@ -180,6 +189,7 @@ pub enum InterruptLevel {
     ActiveHigh = 0x02,
 }
 
+/// Interrupt pin output behavior.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum InterruptOutputBehavior {
@@ -187,9 +197,14 @@ pub enum InterruptOutputBehavior {
     OpenDrain = 0x04,
 }
 
+/// Direction of an interrupt pin, i.e. an input or and output.
+///
+/// The configuration for each are the parameters.
 #[derive(Clone, Debug)]
 pub enum InterruptDirection {
+    /// Configure as an input with a trigger condition.
     Input(InterruptTriggerCondition),
+    /// Configure as an output with a behavior and level.
     Output(InterruptOutputBehavior, InterruptLevel),
 }
 impl InterruptDirection {
@@ -229,7 +244,7 @@ pub enum PowerControlFlag {
 
 #[bitmask(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
-pub enum PowerConfigurationFlag {
+enum PowerConfigurationFlag {
     AdvancedPowerSave = Self(0b0000_0001),
     FifoSelfWakeUp = Self(0b0000_0010),
 }
@@ -244,7 +259,6 @@ pub enum Error<E> {
     I2cError,
     ConfigError,
     BadInternal(u8),
-    Uninitialized,
     BadArgument,
 }
 
@@ -254,6 +268,7 @@ impl<E> core::convert::From<E> for Error<E> {
     }
 }
 
+/// Accelerometer chip ID.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive, FromPrimitive)]
 pub enum ChipId {
@@ -262,19 +277,35 @@ pub enum ChipId {
     Bma423 = 0x13,
 }
 
-/// Structure representing the Bma423 device
-pub struct Bma423<I2C> {
+// Uninitialized state.
+pub struct Uninitialized;
+// Normal full power state.
+pub struct FullPower;
+// Power save state.
+pub struct PowerSave;
+
+// A general initialized state.
+pub trait Initialized {}
+impl Initialized for FullPower {}
+impl Initialized for PowerSave {}
+
+/// Structure representing the BMA423 chip.
+///
+/// This ensures a correct initialization and a consistent
+/// state at every moment using type states, which are zero
+/// cost abstractions.
+pub struct Bma423<I2C, S> {
     /// I2C address
     address: u8,
     /// I2C peripheral
     i2c: I2C,
-    /// Current state
-    state: State,
     /// Current configuration
     config: Config,
+    #[allow(dead_code)]
+    state: S,
 }
 
-/// Configuration of the device
+/// Configuration of the accelerometer measurements.
 #[allow(dead_code)]
 #[derive(new, Copy, Clone, Debug)]
 pub struct Config {
@@ -292,140 +323,59 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             bandwidth: AccelConfigBandwidth::NormAvg4,
-            range: AccelRange::Range2g,
+            range: AccelRange::Range4g,
             performance_mode: AccelConfigPerfMode::CicAvg,
             sample_rate: AccelConfigOdr::Odr50,
         }
     }
 }
 
-pub enum State {
-    Uninitialized,
-    Initialized(ChipId),
-}
-
-impl<I2C: I2c> Bma423<I2C> {
-    /// Create a new Bma423 device with the default slave address (0x18) and configuration.
+impl<I2C: I2c, S> Bma423<I2C, S> {
+    /// Writes bytes to the device over I2C.
     ///
-    /// # Arguments
-    ///
-    /// - `i2c` I2C bus used to communicate with the device
-    ///
-    /// # Returns
-    ///
-    /// - [Bma423 driver](Bma423) created
-    ///
-    #[inline(always)]
-    pub fn new(i2c: I2C) -> Self {
-        Self::new_with_address(i2c, DEFAULT_ADDRESS)
-    }
-
-    /// Create a new Bma423 device with a particular slave address and default
-    /// configuration.
-    ///
-    /// # Arguments
-    ///
-    /// - `i2c` I2C bus used to communicate with the device
-    /// - `address: address of the device
-    ///
-    /// # Returns
-    ///
-    /// - [Bma423 driver](Bma423) created
-    ///
-    pub fn new_with_address(i2c: I2C, address: u8) -> Self {
-        Self {
-            address,
-            i2c,
-            state: State::Uninitialized,
-            config: Config::default(),
-        }
-    }
-
+    /// Generally the first byte should be the register address.
     fn write(&mut self, data: &[u8]) -> Result<(), Error<I2C::Error>> {
         self.i2c.write(self.address, data)?;
         Ok(())
     }
 
-    fn write_read(&mut self, reg: Reg, data: &mut [u8]) -> Result<(), Error<I2C::Error>> {
+    /// Reads some number of bytes from a chip register over
+    /// I2C.
+    ///
+    /// The number of bytes is determined from the size of the
+    /// mutable slice `data`.
+    fn read_register_bytes(&mut self, reg: Reg, data: &mut [u8]) -> Result<(), Error<I2C::Error>> {
         self.i2c.write_read(self.address, &[reg.into()], data)?;
         Ok(())
     }
 
-    /// Reads only a single byte from a register
+    /// Reads only a single byte from a chip register.
     fn read_register(&mut self, reg: Reg) -> Result<u8, Error<I2C::Error>> {
         let mut data = [0; 1];
-        self.write_read(reg, &mut data)?;
+        self.read_register_bytes(reg, &mut data)?;
         Ok(data[0])
     }
 
-    fn probe_chip(&mut self) -> Result<u8, Error<I2C::Error>> {
-        let mut data: [u8; 1] = [0; 1];
-        self.write_read(Reg::ChipId, &mut data)?;
-        Ok(data[0])
-    }
-
-    pub fn set_power_control(&mut self, value: PowerControlFlag) -> Result<(), Error<I2C::Error>> {
-        self.write(&[Reg::PowerControl.into(), value.into()])
-    }
-
-    pub fn set_power_config(
+    /// Sets or clears one or more power configuration flags.
+    fn set_power_config(
         &mut self,
         value: PowerConfigurationFlag,
+        set: bool,
     ) -> Result<(), Error<I2C::Error>> {
-        self.write(&[Reg::PowerConfiguration.into(), value.into()])
-    }
-
-    pub fn get_chip_id(&mut self) -> Result<ChipId, Error<I2C::Error>> {
-        match self.state {
-            State::Uninitialized => Err(Error::Uninitialized),
-            State::Initialized(chip_id) => Ok(chip_id),
+        let mut reg = self.read_register(Reg::PowerConfiguration)?;
+        if set {
+            reg |= u8::from(value);
+        } else {
+            reg &= !u8::from(value);
         }
+        self.write(&[Reg::PowerConfiguration.into(), reg])
     }
-
-    pub fn init(&mut self, delay: &mut impl DelayUs) -> Result<(), Error<I2C::Error>> {
-        let chip_id = self.probe_chip()?;
-        self.state = State::Initialized(chip_id.into());
-
-        // First, perform a soft reset followed by an arbitrary delay
-        self.write(&[Reg::Command.into(), Command::SoftReset.into()])?;
-        delay.delay_us(1000);
-
-        // Disable advanced power saving mode
-        self.set_power_config(PowerConfigurationFlag::none())?;
-
-        // Wait a bit
-        delay.delay_us(500);
-
-        // Enter config file writing mode
-        self.write(&[Reg::StartInitialization.into(), 0])?;
-
-        // Stream write the config file
-        self.stream_write(Reg::FeatureConfig, &config::BMA423_CONFIG_FILE)?;
-
-        // Exit config file writing mode
-        self.write(&[Reg::StartInitialization.into(), 1u8])?;
-
-        // Wait until the chip is ready and initialized with timeout.
-        // This is supposed to take no longer than 140-150 ms.
-        let mut time_ms: usize = 200;
-        while time_ms > 0 && (self.read_register(Reg::InternalStatus)? & 0x0F) != 0x01 {
-            delay.delay_us(1000);
-            time_ms -= 1;
-        }
-        if time_ms == 0 {
-            // We timed out, so there's a serious problem
-            return Err(Error::BadInternal(self.read_register(Reg::InternalStatus)?));
-        }
-
-        // Enable accelerometer power
-        self.set_power_control(PowerControlFlag::Accelerometer)?;
-
-        // Set the configuration to the default
-        self.set_accel_config(self.config)?;
-
-        Ok(())
-    }
-
+}
+impl<I2C: I2c> Bma423<I2C, Uninitialized> {
+    /// Writes stream data to a chip register using the
+    /// special ASIC registers.
+    ///
+    /// This should only be used to write the config file.
     fn stream_write(&mut self, reg: Reg, data: &[u8]) -> Result<(), Error<I2C::Error>> {
         let inc: usize = READ_WRITE_LEN;
         let mut index: usize = 0;
@@ -451,7 +401,163 @@ impl<I2C: I2c> Bma423<I2C> {
         Ok(())
     }
 
-    pub fn set_accel_config(&mut self, config: Config) -> Result<(), Error<I2C::Error>> {
+    /// Create a new Bma423 device with the default slave address (0x18) and configuration.
+    ///
+    /// # Arguments
+    ///
+    /// - `i2c` I2C bus used to communicate with the device
+    /// - `config` Initial accelerometer configuration to use
+    ///
+    /// # Returns
+    ///
+    /// - [Bma423 driver](Bma423) created
+    ///
+    #[inline(always)]
+    pub fn new(i2c: I2C, config: Config) -> Self {
+        Self::new_with_address(i2c, config, DEFAULT_ADDRESS)
+    }
+
+    /// Create a new Bma423 device with a particular slave address and default
+    /// configuration.
+    ///
+    /// # Arguments
+    ///
+    /// - `i2c` I2C bus used to communicate with the device
+    /// - `config` Initial accelerometer configuration to use
+    /// - `address: address of the device
+    ///
+    /// # Returns
+    ///
+    /// - [Bma423 driver](Bma423) created
+    ///
+    pub fn new_with_address(i2c: I2C, config: Config, address: u8) -> Self {
+        Self {
+            address,
+            i2c,
+            config,
+            state: Uninitialized,
+        }
+    }
+
+    /// Initialize the chip by going through its initialization procedure.
+    pub fn init(
+        mut self,
+        delay: &mut impl DelayUs,
+    ) -> Result<Bma423<I2C, FullPower>, Error<I2C::Error>> {
+        // First, perform a soft reset followed by an arbitrary delay
+        self.write(&[Reg::Command.into(), Command::SoftReset.into()])?;
+        delay.delay_ms(1);
+
+        // Disable advanced power saving mode
+        self.set_power_config(PowerConfigurationFlag::all(), false)?;
+
+        // Wait a bit
+        delay.delay_us(500);
+
+        // Enter config file writing mode
+        self.write(&[Reg::StartInitialization.into(), 0])?;
+
+        // Stream write the config file
+        self.stream_write(Reg::FeatureConfig, &config::BMA423_CONFIG_FILE)?;
+
+        // Exit config file writing mode
+        self.write(&[Reg::StartInitialization.into(), 1u8])?;
+
+        // Wait until the chip is ready and initialized with timeout.
+        // This is supposed to take no longer than 140-150 ms.
+        let mut time_ms: usize = 200;
+        while time_ms > 0 && (self.read_register(Reg::InternalStatus)? & 0x0F) != 0x01 {
+            delay.delay_us(1000);
+            time_ms -= 1;
+        }
+        if time_ms == 0 {
+            // We timed out, so there's a serious problem
+            return Err(Error::BadInternal(self.read_register(Reg::InternalStatus)?));
+        }
+
+        let mut driver = Bma423 {
+            address: self.address,
+            i2c: self.i2c,
+            config: self.config,
+            state: FullPower,
+        };
+
+        // Enable accelerometer power
+        driver.set_power_control(PowerControlFlag::Accelerometer)?;
+
+        // Set the configuration to the default
+        driver.set_accel_config(delay, driver.config)?;
+
+        Ok(driver)
+    }
+}
+impl<I2C: I2c> Bma423<I2C, FullPower> {
+    /// Obtains an [`EditFeatures`] that can be used to configure the chip
+    /// features efficiently.
+    pub fn edit_features(&mut self) -> Result<EditFeatures<'_, I2C>, Error<I2C::Error>> {
+        let mut register = [0; FEATURE_SIZE + 1];
+        self.read_register_bytes(Reg::FeatureConfig, &mut register[1..FEATURE_SIZE + 1])?;
+
+        Ok(EditFeatures {
+            register,
+            driver: self,
+        })
+    }
+
+    // TODO: This is a test function useful for verifying that feature
+    // registers are set correctly. This should be removed once all
+    // features are implemented.
+    /* pub fn read_features_mem(&mut self) -> Result<[u8; FEATURE_SIZE], Error<I2C::Error>> {
+        let mut feature_config: [u8; FEATURE_SIZE] = [0; FEATURE_SIZE];
+        self.write_read(Reg::FeatureConfig, &mut feature_config)?;
+        Ok(feature_config)
+    }*/
+
+    pub fn power_save_mode(self) -> Result<Bma423<I2C, PowerSave>, Error<I2C::Error>> {
+        let mut driver = Bma423 {
+            address: self.address,
+            i2c: self.i2c,
+            config: self.config,
+            state: PowerSave,
+        };
+        driver.set_power_config(PowerConfigurationFlag::AdvancedPowerSave, true)?;
+
+        Ok(driver)
+    }
+}
+impl<I2C: I2c> Bma423<I2C, PowerSave> {
+    pub fn full_power_mode(self) -> Result<Bma423<I2C, FullPower>, Error<I2C::Error>> {
+        let mut driver = Bma423 {
+            address: self.address,
+            i2c: self.i2c,
+            config: self.config,
+            state: FullPower,
+        };
+        driver.set_power_config(PowerConfigurationFlag::AdvancedPowerSave, false)?;
+
+        Ok(driver)
+    }
+}
+impl<I2C: I2c, S: Initialized> Bma423<I2C, S> {
+    /// Sets which components of the chip have power applied.
+    pub fn set_power_control(&mut self, value: PowerControlFlag) -> Result<(), Error<I2C::Error>> {
+        self.write(&[Reg::PowerControl.into(), value.into()])
+    }
+
+    /// Returns the chip ID enum.
+    pub fn read_chip_id(&mut self) -> Result<ChipId, Error<I2C::Error>> {
+        Ok(ChipId::from(self.read_register(Reg::ChipId)?))
+    }
+
+    /// Configures the accelerometer measurements.
+    ///
+    /// A delay is required to allow time for the new
+    /// configuration to take effect.
+    pub fn set_accel_config(
+        &mut self,
+        delay: &mut impl DelayUs,
+        config: Config,
+    ) -> Result<(), Error<I2C::Error>> {
         if config.performance_mode == AccelConfigPerfMode::Continuous {
             if (config.bandwidth as u8) > (AccelConfigBandwidth::NormAvg4 as u8) {
                 return Err(Error::ConfigError);
@@ -469,20 +575,12 @@ impl<I2C: I2c> Bma423<I2C> {
         let accel_range: u8 = config.range as u8;
         self.write(&[Reg::AccelConfig.into(), accel_config])?;
         self.write(&[Reg::AccelRange.into(), accel_range])?;
-
         self.config = config;
+
+        // This seems to be adequate even if the data rate is low.
+        delay.delay_ms(50);
+
         Ok(())
-    }
-
-    /// Obtains an [`EditFeatures`] that can be used to configure the chip features.
-    pub fn edit_features(&mut self) -> Result<EditFeatures<'_, I2C>, Error<I2C::Error>> {
-        let mut register = [0; FEATURE_SIZE + 1];
-        self.write_read(Reg::FeatureConfig, &mut register[1..FEATURE_SIZE + 1])?;
-
-        Ok(EditFeatures {
-            register,
-            driver: self,
-        })
     }
 
     /// Configures the electrical behavior of an interrupt pin.
@@ -511,23 +609,7 @@ impl<I2C: I2c> Bma423<I2C> {
         Ok(())
     }
 
-    // TODO: These are for verifying that feature and other registers are being set correctly
-    /* pub fn get_features_mem(&mut self) -> Result<[u8; FEATURE_SIZE], Error<I2C::Error>> {
-        // TODO: Get FEATURES_IN memory
-        let mut feature_config: [u8; FEATURE_SIZE] = [0; FEATURE_SIZE];
-        self.write_read(Reg::FeatureConfig, &mut feature_config)?;
-        Ok(feature_config)
-    }
-
-    // TODO delete probably
-    pub fn test_regs(&mut self) -> Result<[u8; 4], Error<I2C::Error>> {
-        let a = self.read_register(Reg::Interrupt1IOCtl)?;
-        let b = self.read_register(Reg::Interrupt2IOCtl)?;
-        let c = self.read_register(Reg::FeatureInterrupt1Mapping)?;
-        let d = self.read_register(Reg::FeatureInterrupt2Mapping)?;
-        Ok([a, b, c, d])
-    } */
-
+    /// Maps features to one of the chip interrupt pins.
     pub fn map_feature_interrupt(
         &mut self,
         line: InterruptLine,
@@ -551,45 +633,44 @@ impl<I2C: I2c> Bma423<I2C> {
         Ok(())
     }
 
+    /// Enables hardware interrupts.
     pub fn map_hardware_interrupt(
         &mut self,
         interrupts: HardwareInterruptStatus,
         enable: bool,
     ) -> Result<(), Error<I2C::Error>> {
-        let mut data: [u8; 1] = [0];
-
-        self.write_read(Reg::HardwareInterruptMapping, &mut data)?;
+        let mut reg = self.read_register(Reg::HardwareInterruptMapping)?;
 
         if enable {
-            data[0] |= u8::from(interrupts);
+            reg |= u8::from(interrupts);
         } else {
-            data[0] &= u8::from(interrupts.not());
+            reg &= u8::from(interrupts.not());
         }
 
-        self.write(&[Reg::HardwareInterruptMapping.into(), data[0]])?;
+        self.write(&[Reg::HardwareInterruptMapping.into(), reg])?;
 
         Ok(())
     }
 
+    /// Reads and returns the interrupt status from the chip.
     pub fn read_interrupt_status(&mut self) -> Result<InterruptStatus, Error<I2C::Error>> {
         let mut data: [u8; 2] = [0; 2];
-        self.write_read(Reg::FeatureInterruptStatus, &mut data)?;
+        self.read_register_bytes(Reg::FeatureInterruptStatus, &mut data)?;
         Ok(InterruptStatus {
             feature: data[0].into(),
             hardware: data[1].into(),
         })
     }
 
-    pub fn get_status(&mut self) -> Result<u8, Error<I2C::Error>> {
-        let mut data: [u8; 1] = [0; 1];
-        self.write_read(Reg::Status, &mut data)?;
-        Ok(data[0])
+    /// Reads and returns the general chip status byte.
+    pub fn read_status(&mut self) -> Result<u8, Error<I2C::Error>> {
+        self.read_register(Reg::Status)
     }
 
     /// Returns the normalized accelerations in g.
-    fn accel_norm_int(&mut self) -> Result<(f32, f32, f32), Error<I2C::Error>> {
+    pub fn accel_norm_int(&mut self) -> Result<(f32, f32, f32), Error<I2C::Error>> {
         let mut data: [u8; 6] = [0; 6];
-        self.write_read(Reg::AccXLSB, &mut data)?;
+        self.read_register_bytes(Reg::AccXLSB, &mut data)?;
 
         let x: i16 = ((((data[1] as i16) << 8) as i16) | (data[0] as i16)) / 0x10;
         let y: i16 = ((((data[3] as i16) << 8) as i16) | (data[2] as i16)) / 0x10;
@@ -617,7 +698,7 @@ impl<I2C: I2c> Bma423<I2C> {
 }
 
 #[cfg(feature = "accel")]
-impl<I2C: I2c> Accelerometer for Bma423<I2C> {
+impl<I2C: I2c, S: Initialized> Accelerometer for Bma423<I2C, S> {
     type Error = Error<I2C::Error>;
 
     fn accel_norm(&mut self) -> Result<F32x3, accelerometer::Error<Error<I2C::Error>>> {

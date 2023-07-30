@@ -10,9 +10,17 @@ This is an experimental Rust driver for the BMA423 accelerometer.
 
 What's working:
 - Getting x, y, z axis acceleration values
+- The motion detection feature
+- The tap detection feature
+- Configuring the interrupt pins
+- Mapping features to the interrupt pins (as outputs)
 
 What's missing:
-- Identifying activities and reporting them with interrupts
+- The step counter and step detection features
+- Activity classification feature
+- Wrist wakeup feature
+- Auxiliary interface configuration
+- FIFO configuration
 
 ## Examples
 
