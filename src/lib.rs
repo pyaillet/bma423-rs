@@ -10,8 +10,8 @@
 // NOTE: Evidently there is no way to document bitmask enums,
 // nor can these warnings be disabled for them, so these
 // should be used as needed but commented out for commits.
-#![warn(missing_docs)]
-#![warn(clippy::missing_docs_in_private_items)]
+//#![warn(missing_docs)]
+//#![warn(clippy::missing_docs_in_private_items)]
 
 #[cfg(feature = "accel")]
 use accelerometer::{vector::F32x3, Accelerometer};
@@ -72,56 +72,90 @@ enum Reg {
     Command = 0x7e,
 }
 
+/// Accelerometer sampling rates.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum AccelConfigOdr {
+    /// 0.78 Hz
     Odr0p78 = 0x01,
+    /// 1.5 Hz
     Odr1p5 = 0x02,
+    /// 3.1 Hz
     Odr3p1 = 0x03,
+    /// 6.25 Hz
     Odr6p25 = 0x04,
+    /// 12.5 Hz
     Odr12p5 = 0x05,
+    /// 25 Hz
     Odr25 = 0x06,
+    /// 50 Hz
     Odr50 = 0x07,
+    /// 100 Hz
     Odr100 = 0x08,
+    /// 200 Hz
     Odr200 = 0x09,
+    /// 400 Hz
     Odr400 = 0x0a,
+    /// 800 Hz
     Odr800 = 0x0b,
+    /// 1.6 kHz
     Odr1k6 = 0x0c,
 }
 
+/// Accelerometer sample bandwidth and averaging.
+///
+/// Refer the the data sheet for further details.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum AccelConfigBandwidth {
+    /// Performance mode: OSR4, Low power mode: No averaging
     Osr4Avg1 = 0x00,
+    /// Performance mode: OSR2, Low power mode: Average 2 samples
     Osr2Avg2 = 0x10,
+    /// Performance mode: Normal, Low power mode: Average 4 samples
     NormAvg4 = 0x20,
+    /// Low power mode: Average 8 samples
     CicAvg8 = 0x30,
+    /// Low power mode: Average 16 samples
     ResAvg16 = 0x40,
+    /// Low power mode: Average 32 samples
     ResAvg32 = 0x50,
+    /// Low power mode: Average 64 samples
     ResAvg64 = 0x60,
+    /// Low power mode: Average 128 samples
     ResAvg128 = 0x70,
 }
 
+/// Accelerometer filter mode
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, IntoPrimitive)]
 pub enum AccelConfigPerfMode {
+    /// Averaging mode
     CicAvg = 0x00,
+    /// Continuous filter mode
     Continuous = 0x80,
 }
 
 /// Accelerometer acceleration vector range.
 ///
 /// Values measured outside this range will be clipped to
-/// the range.
+/// the range. Bear in mind that the signed range is quantized
+/// into 12 bits so that smaller ranges will have more
+/// resolution.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum AccelRange {
+    /// Max range of ±2 g
     Range2g = 0x00,
+    /// Max range of ±4 g
     Range4g = 0x01,
+    /// Max range of ±8 g
     Range8g = 0x02,
+    /// Max range of ±16 g
     Range16g = 0x03,
 }
 impl AccelRange {
+    /// Returns the range as a floating point in g.
     pub fn as_float(&self) -> f32 {
         match self {
             AccelRange::Range2g => 2.0,
@@ -161,7 +195,9 @@ pub enum HardwareInterruptStatus {
 /// Interrupt status structure.
 #[derive(Copy, Clone, Debug)]
 pub struct InterruptStatus {
+    /// Feature interrupt status
     pub feature: FeatureInterruptStatus,
+    /// Hardware interrupt status
     pub hardware: HardwareInterruptStatus,
 }
 
@@ -169,7 +205,9 @@ pub struct InterruptStatus {
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum InterruptLine {
+    /// Interrupt line 1
     Line1 = 0,
+    /// Interrupt line 2
     Line2 = 1,
 }
 
@@ -177,7 +215,9 @@ pub enum InterruptLine {
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum InterruptTriggerCondition {
+    /// Trigger when the level reaches a value
     Level = 0x00,
+    /// Trigger only on an edge
     Edge = 0x01,
 }
 
@@ -185,7 +225,9 @@ pub enum InterruptTriggerCondition {
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum InterruptLevel {
+    /// The interrupt line will be low when active and high otherwise
     ActiveLow = 0x00,
+    /// The interrupt line will be high when active and low otherwise
     ActiveHigh = 0x02,
 }
 
@@ -193,7 +235,10 @@ pub enum InterruptLevel {
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum InterruptOutputBehavior {
+    /// Push pull output, i.e. the pin drives the line voltage
     PushPull = 0x00,
+    /// Open drain output, i.e. the pin acts as a ground switch,
+    /// requiring that it be pulled up externally
     OpenDrain = 0x04,
 }
 
@@ -253,12 +298,18 @@ const DEFAULT_ADDRESS: u8 = 0x18;
 const READ_WRITE_LEN: usize = 0x08;
 const GRAVITY_EARTH: f32 = 9.80665;
 
+/// General accelerometer error.
+///
+/// The generic `E` is the error type of the I2C driver.
 #[derive(Clone, Copy, Debug)]
 pub enum Error<E> {
+    /// I2C bus error
     BusError(E),
-    I2cError,
+    /// Tried to set an invalid configuration
     ConfigError,
+    /// The chip is in an erroneous internal state
     BadInternal(u8),
+    /// An invalid argument was passed to a function
     BadArgument,
 }
 
@@ -272,19 +323,21 @@ impl<E> core::convert::From<E> for Error<E> {
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive, FromPrimitive)]
 pub enum ChipId {
+    /// Unknown or invalid chip ID
     #[default]
     Unknown = 0x00,
+    /// The chip ID is correct
     Bma423 = 0x13,
 }
 
-// Uninitialized state.
+/// Uninitialized state.
 pub struct Uninitialized;
-// Normal full power state.
+/// Normal full power state.
 pub struct FullPower;
-// Power save state.
+/// Advanced power save state.
 pub struct PowerSave;
 
-// A general initialized state.
+/// A general initialized state.
 pub trait Initialized {}
 impl Initialized for FullPower {}
 impl Initialized for PowerSave {}
@@ -309,9 +362,13 @@ pub struct Bma423<I2C, S> {
 #[allow(dead_code)]
 #[derive(new, Copy, Clone, Debug)]
 pub struct Config {
+    /// The bandwidth or averaging mode
     pub bandwidth: AccelConfigBandwidth,
+    /// The range of measurable accelerations
     pub range: AccelRange,
+    /// Filter mode
     pub performance_mode: AccelConfigPerfMode,
+    /// Sampling rate
     pub sample_rate: AccelConfigOdr,
 }
 impl Default for Config {
@@ -513,6 +570,7 @@ impl<I2C: I2c> Bma423<I2C, FullPower> {
         Ok(feature_config)
     }*/
 
+    /// Transitions to advanced power save mode.
     pub fn power_save_mode(self) -> Result<Bma423<I2C, PowerSave>, Error<I2C::Error>> {
         let mut driver = Bma423 {
             address: self.address,
@@ -526,6 +584,7 @@ impl<I2C: I2c> Bma423<I2C, FullPower> {
     }
 }
 impl<I2C: I2c> Bma423<I2C, PowerSave> {
+    /// Transitions to full power mode.
     pub fn full_power_mode(self) -> Result<Bma423<I2C, FullPower>, Error<I2C::Error>> {
         let mut driver = Bma423 {
             address: self.address,
@@ -665,6 +724,11 @@ impl<I2C: I2c, S: Initialized> Bma423<I2C, S> {
     /// Reads and returns the general chip status byte.
     pub fn read_status(&mut self) -> Result<u8, Error<I2C::Error>> {
         self.read_register(Reg::Status)
+    }
+
+    /// Enables or disables FIFO self wake up.
+    pub fn set_fifo_self_wakeup(&mut self, enable: bool) -> Result<(), Error<I2C::Error>> {
+        self.set_power_config(PowerConfigurationFlag::FifoSelfWakeUp, enable)
     }
 
     /// Returns the normalized accelerations in g.
