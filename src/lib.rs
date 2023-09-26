@@ -16,7 +16,6 @@
 #[cfg(feature = "accel")]
 use accelerometer::{vector::F32x3, Accelerometer};
 use bitmask_enum::bitmask;
-use derive_new::new;
 use embedded_hal::{delay::DelayUs, i2c::I2c};
 use num_enum::{FromPrimitive, IntoPrimitive};
 
@@ -360,7 +359,7 @@ pub struct Bma423<I2C, S> {
 
 /// Configuration of the accelerometer measurements.
 #[allow(dead_code)]
-#[derive(new, Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Config {
     /// The bandwidth or averaging mode
     pub bandwidth: AccelConfigBandwidth,
