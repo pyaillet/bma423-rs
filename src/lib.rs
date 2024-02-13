@@ -16,7 +16,7 @@
 #[cfg(feature = "accel")]
 use accelerometer::{vector::F32x3, Accelerometer};
 use bitmask_enum::bitmask;
-use embedded_hal::{delay::DelayUs, i2c::I2c};
+use embedded_hal::{delay::DelayNs, i2c::I2c};
 use num_enum::{FromPrimitive, IntoPrimitive};
 
 mod config;
@@ -498,7 +498,7 @@ impl<I2C: I2c> Bma423<I2C, Uninitialized> {
     /// Initialize the chip by going through its initialization procedure.
     pub fn init(
         mut self,
-        delay: &mut impl DelayUs,
+        delay: &mut impl DelayNs,
     ) -> Result<Bma423<I2C, FullPower>, Error<I2C::Error>> {
         // First, perform a soft reset followed by an arbitrary delay
         self.write(&[Reg::Command.into(), Command::SoftReset.into()])?;
@@ -613,7 +613,7 @@ impl<I2C: I2c, S: Initialized> Bma423<I2C, S> {
     /// configuration to take effect.
     pub fn set_accel_config(
         &mut self,
-        delay: &mut impl DelayUs,
+        delay: &mut impl DelayNs,
         config: Config,
     ) -> Result<(), Error<I2C::Error>> {
         if config.performance_mode == AccelConfigPerfMode::Continuous {
