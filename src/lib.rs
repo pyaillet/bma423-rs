@@ -326,6 +326,8 @@ pub enum ChipId {
     #[default]
     Unknown = 0x00,
     /// The chip ID is correct
+    Bma421 = 0x11,
+    /// The chip ID is correct
     Bma423 = 0x13,
 }
 
@@ -514,6 +516,9 @@ impl<I2C: I2c> Bma423<I2C, Uninitialized> {
         self.write(&[Reg::StartInitialization.into(), 0])?;
 
         // Stream write the config file
+        #[cfg(feature = "bma421")]
+        self.stream_write(Reg::FeatureConfig, &config::BMA421_CONFIG_FILE)?;
+        #[cfg(feature = "bma423")]
         self.stream_write(Reg::FeatureConfig, &config::BMA423_CONFIG_FILE)?;
 
         // Exit config file writing mode
