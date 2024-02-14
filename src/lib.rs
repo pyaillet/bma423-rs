@@ -19,8 +19,20 @@ use bitmask_enum::bitmask;
 use embedded_hal::{delay::DelayNs, i2c::I2c};
 use num_enum::{FromPrimitive, IntoPrimitive};
 
-mod config;
+#[cfg(feature = "bma421")]
+mod bma421;
+#[cfg(feature = "bma423")]
+mod bma423;
+#[cfg(feature = "bma425")]
+mod bma425;
 pub mod features;
+
+#[cfg(feature = "bma421")]
+pub use bma421::Bma421;
+#[cfg(feature = "bma423")]
+pub use bma423::Bma423;
+#[cfg(feature = "bma425")]
+pub use bma425::Bma425;
 
 use features::{EditFeatures, FEATURE_SIZE};
 
@@ -293,6 +305,12 @@ enum PowerConfigurationFlag {
     FifoSelfWakeUp = Self(0b0000_0010),
 }
 
+#[cfg(feature = "bma421")]
+const CONFIG_FILE: [u8; 6144] = bma421::BMA421_CONFIG_FILE;
+#[cfg(feature = "bma423")]
+const CONFIG_FILE: [u8; 6144] = bma423::BMA423_CONFIG_FILE;
+#[cfg(feature = "bma425")]
+const CONFIG_FILE: [u8; 6144] = bma425::BMA425_CONFIG_FILE;
 const DEFAULT_ADDRESS: u8 = 0x18;
 const READ_WRITE_LEN: usize = 0x08;
 const GRAVITY_EARTH: f32 = 9.80665;
@@ -326,9 +344,14 @@ pub enum ChipId {
     #[default]
     Unknown = 0x00,
     /// The chip ID is correct
+    #[cfg(feature = "bma421")]
     Bma421 = 0x11,
     /// The chip ID is correct
+    #[cfg(feature = "bma423")]
     Bma423 = 0x13,
+    /// The chip ID is correct
+    #[cfg(feature = "bma425")]
+    Bma425 = 0x13,
 }
 
 /// Uninitialized state.
@@ -343,12 +366,12 @@ pub trait Initialized {}
 impl Initialized for FullPower {}
 impl Initialized for PowerSave {}
 
-/// Structure representing the BMA423 chip.
+/// Structure representing the BMA42x chip.
 ///
 /// This ensures a correct initialization and a consistent
 /// state at every moment using type states, which are zero
 /// cost abstractions.
-pub struct Bma423<I2C, S> {
+pub struct Bma42x<I2C, S> {
     /// I2C address
     address: u8,
     /// I2C peripheral
@@ -388,7 +411,7 @@ impl Default for Config {
     }
 }
 
-impl<I2C: I2c, S> Bma423<I2C, S> {
+impl<I2C: I2c, S> Bma42x<I2C, S> {
     /// Writes bytes to the device over I2C.
     ///
     /// Generally the first byte should be the register address.
@@ -429,7 +452,7 @@ impl<I2C: I2c, S> Bma423<I2C, S> {
         self.write(&[Reg::PowerConfiguration.into(), reg])
     }
 }
-impl<I2C: I2c> Bma423<I2C, Uninitialized> {
+impl<I2C: I2c> Bma42x<I2C, Uninitialized> {
     /// Writes stream data to a chip register using the
     /// special ASIC registers.
     ///
@@ -459,7 +482,7 @@ impl<I2C: I2c> Bma423<I2C, Uninitialized> {
         Ok(())
     }
 
-    /// Create a new Bma423 device with the default slave address (0x18) and configuration.
+    /// Create a new Bma42x device with the default slave address (0x18) and configuration.
     ///
     /// # Arguments
     ///
@@ -468,14 +491,14 @@ impl<I2C: I2c> Bma423<I2C, Uninitialized> {
     ///
     /// # Returns
     ///
-    /// - [Bma423 driver](Bma423) created
+    /// - [Bma42x driver](Bma42x) created
     ///
     #[inline(always)]
     pub fn new(i2c: I2C, config: Config) -> Self {
         Self::new_with_address(i2c, config, DEFAULT_ADDRESS)
     }
 
-    /// Create a new Bma423 device with a particular slave address and default
+    /// Create a new Bma42x device with a particular slave address and default
     /// configuration.
     ///
     /// # Arguments
@@ -486,7 +509,7 @@ impl<I2C: I2c> Bma423<I2C, Uninitialized> {
     ///
     /// # Returns
     ///
-    /// - [Bma423 driver](Bma423) created
+    /// - [Bma42x driver](Bma42x) created
     ///
     pub fn new_with_address(i2c: I2C, config: Config, address: u8) -> Self {
         Self {
@@ -501,7 +524,7 @@ impl<I2C: I2c> Bma423<I2C, Uninitialized> {
     pub fn init(
         mut self,
         delay: &mut impl DelayNs,
-    ) -> Result<Bma423<I2C, FullPower>, Error<I2C::Error>> {
+    ) -> Result<Bma42x<I2C, FullPower>, Error<I2C::Error>> {
         // First, perform a soft reset followed by an arbitrary delay
         self.write(&[Reg::Command.into(), Command::SoftReset.into()])?;
         delay.delay_ms(1);
@@ -516,10 +539,7 @@ impl<I2C: I2c> Bma423<I2C, Uninitialized> {
         self.write(&[Reg::StartInitialization.into(), 0])?;
 
         // Stream write the config file
-        #[cfg(feature = "bma421")]
-        self.stream_write(Reg::FeatureConfig, &config::BMA421_CONFIG_FILE)?;
-        #[cfg(feature = "bma423")]
-        self.stream_write(Reg::FeatureConfig, &config::BMA423_CONFIG_FILE)?;
+        self.stream_write(Reg::FeatureConfig, &CONFIG_FILE)?;
 
         // Exit config file writing mode
         self.write(&[Reg::StartInitialization.into(), 1u8])?;
@@ -536,7 +556,7 @@ impl<I2C: I2c> Bma423<I2C, Uninitialized> {
             return Err(Error::BadInternal(self.read_register(Reg::InternalStatus)?));
         }
 
-        let mut driver = Bma423 {
+        let mut driver = Bma42x {
             address: self.address,
             i2c: self.i2c,
             config: self.config,
@@ -552,7 +572,7 @@ impl<I2C: I2c> Bma423<I2C, Uninitialized> {
         Ok(driver)
     }
 }
-impl<I2C: I2c> Bma423<I2C, FullPower> {
+impl<I2C: I2c> Bma42x<I2C, FullPower> {
     /// Obtains an [`EditFeatures`] that can be used to configure the chip
     /// features efficiently.
     pub fn edit_features(&mut self) -> Result<EditFeatures<'_, I2C>, Error<I2C::Error>> {
@@ -575,8 +595,8 @@ impl<I2C: I2c> Bma423<I2C, FullPower> {
     }*/
 
     /// Transitions to advanced power save mode.
-    pub fn power_save_mode(self) -> Result<Bma423<I2C, PowerSave>, Error<I2C::Error>> {
-        let mut driver = Bma423 {
+    pub fn power_save_mode(self) -> Result<Bma42x<I2C, PowerSave>, Error<I2C::Error>> {
+        let mut driver = Bma42x {
             address: self.address,
             i2c: self.i2c,
             config: self.config,
@@ -587,10 +607,10 @@ impl<I2C: I2c> Bma423<I2C, FullPower> {
         Ok(driver)
     }
 }
-impl<I2C: I2c> Bma423<I2C, PowerSave> {
+impl<I2C: I2c> Bma42x<I2C, PowerSave> {
     /// Transitions to full power mode.
-    pub fn full_power_mode(self) -> Result<Bma423<I2C, FullPower>, Error<I2C::Error>> {
-        let mut driver = Bma423 {
+    pub fn full_power_mode(self) -> Result<Bma42x<I2C, FullPower>, Error<I2C::Error>> {
+        let mut driver = Bma42x {
             address: self.address,
             i2c: self.i2c,
             config: self.config,
@@ -601,7 +621,7 @@ impl<I2C: I2c> Bma423<I2C, PowerSave> {
         Ok(driver)
     }
 }
-impl<I2C: I2c, S: Initialized> Bma423<I2C, S> {
+impl<I2C: I2c, S: Initialized> Bma42x<I2C, S> {
     /// Sets which components of the chip have power applied.
     pub fn set_power_control(&mut self, value: PowerControlFlag) -> Result<(), Error<I2C::Error>> {
         self.write(&[Reg::PowerControl.into(), value.into()])
@@ -766,7 +786,7 @@ impl<I2C: I2c, S: Initialized> Bma423<I2C, S> {
 }
 
 #[cfg(feature = "accel")]
-impl<I2C: I2c, S: Initialized> Accelerometer for Bma423<I2C, S> {
+impl<I2C: I2c, S: Initialized> Accelerometer for Bma42x<I2C, S> {
     type Error = Error<I2C::Error>;
 
     fn accel_norm(&mut self) -> Result<F32x3, accelerometer::Error<Error<I2C::Error>>> {
