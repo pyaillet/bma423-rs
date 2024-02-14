@@ -22,4 +22,5 @@ defmt = "=0.3.2"
 [features]
 accel = ["accelerometer"]
 bma421 = []
+bma423 = []
 default = ["accel", "bma423"]
