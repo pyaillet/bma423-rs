@@ -18,4 +18,6 @@ num_enum = {version = "^0.5", default-features = false}
 
 [features]
 accel = ["accelerometer"]
-default = ["accel"]
+bma423 = []
+bma425 = []
+default = ["accel", "bma423"]
