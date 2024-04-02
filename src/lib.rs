@@ -346,10 +346,8 @@ pub enum ChipId {
     /// The chip ID is correct
     #[cfg(feature = "bma421")]
     Bma421 = 0x11,
-    /// The chip ID is correct
     #[cfg(feature = "bma423")]
     Bma423 = 0x13,
-    /// The chip ID is correct
     #[cfg(feature = "bma425")]
     Bma425 = 0x13,
 }
