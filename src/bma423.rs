@@ -1,3 +1,9 @@
+// Enure that no other device feature is enabled
+#[cfg(feature = "bma421")]
+compile_error!("Feature \"bma423\" and feature \"bma421\" cannot be enabled at the same time.");
+#[cfg(feature = "bma425")]
+compile_error!("Feature \"bma423\" and feature \"bma425\" cannot be enabled at the same time.");
+
 /// Structure representing the BMA423 chip.
 ///
 /// This ensures a correct initialization and a consistent
