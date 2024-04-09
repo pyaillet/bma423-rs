@@ -1,3 +1,18 @@
+// Enure that no other device feature is enabled
+#[cfg(feature = "bma421")]
+compile_error!("Feature \"bma423\" and feature \"bma421\" cannot be enabled at the same time.");
+#[cfg(feature = "bma425")]
+compile_error!("Feature \"bma423\" and feature \"bma425\" cannot be enabled at the same time.");
+
+/// Structure representing the BMA423 chip.
+///
+/// This ensures a correct initialization and a consistent
+/// state at every moment using type states, which are zero
+/// cost abstractions.
+#[allow(unused)]
+#[cfg(feature = "bma423")]
+pub type Bma423<I2C, S> = crate::Bma42x<I2C, S>;
+
 pub(crate) const BMA423_CONFIG_FILE: [u8; 6144] = [
     0x80, 0x2e, 0x38, 0xb1, 0x80, 0x2e, 0x3a, 0xb1, 0xc8, 0x2e, 0x00, 0x2e, 0x80, 0x2e, 0xff, 0x00,
     0x80, 0x2e, 0xe1, 0xb0, 0x80, 0x2e, 0x39, 0xb1, 0x80, 0x2e, 0xff, 0x01, 0x80, 0x2e, 0x11, 0xb1,

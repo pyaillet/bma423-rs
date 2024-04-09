@@ -70,7 +70,7 @@ pub enum TapFeature {
 /// effect.
 pub struct EditFeatures<'a, I2C> {
     pub(crate) register: [u8; FEATURE_SIZE + 1],
-    pub(crate) driver: &'a mut crate::Bma423<I2C, FullPower>,
+    pub(crate) driver: &'a mut crate::Bma42x<I2C, FullPower>,
 }
 impl<I2C: embedded_hal::i2c::I2c> EditFeatures<'_, I2C> {
     /// Allows editing the features register without the offset.

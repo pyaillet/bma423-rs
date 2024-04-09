@@ -1,10 +1,10 @@
 [package]
 authors = ["Pierre-Yves Aillet <pyaillet@gmail.com>"]
 categories = ["embedded", "hardware-support"]
-description = "Rust driver for Bma423 accelerometer"
+description = "Rust driver for BMA421, BMA423, and BMA425 accelerometers"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-name = "bma423"
+name = "bma42x"
 readme = "README.md"
 repository = "https://github.com/pyaillet/bma423-rs"
 version = "0.0.3"
@@ -18,4 +18,7 @@ num_enum = {version = "^0.5", default-features = false}
 
 [features]
 accel = ["accelerometer"]
-default = ["accel"]
+bma421 = []
+bma423 = []
+bma425 = []
+default = ["accel", "bma423"]
