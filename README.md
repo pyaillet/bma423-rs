@@ -14,6 +14,7 @@ What's working:
 - The tap detection feature
 - Configuring the interrupt pins
 - Mapping features to the interrupt pins (as outputs)
+- Remapping the axes
 
 What's missing:
 - The step counter and step detection features

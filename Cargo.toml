@@ -11,10 +11,10 @@ version = "0.0.3"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-accelerometer = {version = "^0.12", optional = true}
-bitmask-enum = {version = "^1.1"}
-embedded-hal = "1.0.0-rc.1"
-num_enum = {version = "^0.5", default-features = false}
+accelerometer = {version = "0.12", optional = true}
+bitmask-enum = {version = "2.2"}
+embedded-hal = "1.0"
+num_enum = {version = "0.7", default-features = false}
 
 [features]
 accel = ["accelerometer"]
