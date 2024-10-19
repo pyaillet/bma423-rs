@@ -24,7 +24,7 @@ pub mod features;
 
 use features::{EditFeatures, FEATURE_SIZE};
 
-/// Chip registers
+/// Chip registers.
 #[allow(dead_code)]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, IntoPrimitive)]
@@ -167,28 +167,26 @@ impl AccelRange {
 
 /// Feature interrupt status.
 #[bitmask(u8)]
-#[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum FeatureInterruptStatus {
     /* Taken from examples */
-    SingleTap = Self(0b0000_0001),
-    StepCounter = Self(0b0000_0010),
-    Activity = Self(0b0000_0100),
-    WristWear = Self(0b0000_1000),
-    DoubleTap = Self(0b0001_0000),
-    AnyMotion = Self(0b0010_0000),
-    NoMotion = Self(0b0100_0000),
-    Error = Self(0b1000_0000),
+    SingleTap = 0b0000_0001,
+    StepCounter = 0b0000_0010,
+    Activity = 0b0000_0100,
+    WristWear = 0b0000_1000,
+    DoubleTap = 0b0001_0000,
+    AnyMotion = 0b0010_0000,
+    NoMotion = 0b0100_0000,
+    Error = 0b1000_0000,
 }
 
 /// Hardware interrupt status.
 #[bitmask(u8)]
-#[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum HardwareInterruptStatus {
-    FifoFull = Self(0x01),
-    FifoWatermark = Self(0x02),
-    DataReady = Self(0x04),
-    AuxiliaryDataReady = Self(0x20),
-    AcceleratorDataReady = Self(0x80),
+    FifoFull = 0x01,
+    FifoWatermark = 0x02,
+    DataReady = 0x04,
+    AuxiliaryDataReady = 0x20,
+    AcceleratorDataReady = 0x80,
 }
 
 /// Interrupt status structure.
@@ -252,6 +250,7 @@ pub enum InterruptDirection {
     Output(InterruptOutputBehavior, InterruptLevel),
 }
 impl InterruptDirection {
+    /// Bit mask for the direction.
     fn bit_mask(&self) -> u8 {
         match self {
             InterruptDirection::Input(_) => 0x10,
@@ -260,6 +259,7 @@ impl InterruptDirection {
     }
 }
 
+/// Activity types.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive, FromPrimitive)]
 enum Activity {
@@ -270,6 +270,7 @@ enum Activity {
     Invalid = 0x03,
 }
 
+/// Chip commands.
 #[allow(dead_code)]
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, IntoPrimitive)]
@@ -280,21 +281,22 @@ enum Command {
 }
 
 #[bitmask(u8)]
-#[derive(Copy, Clone, Debug, IntoPrimitive)]
 pub enum PowerControlFlag {
-    Accelerometer = Self(0b0000_0100),
-    Auxiliary = Self(0b0000_0001),
+    Accelerometer = 0b0000_0100,
+    Auxiliary = 0b0000_0001,
 }
 
 #[bitmask(u8)]
-#[derive(Copy, Clone, Debug, IntoPrimitive)]
 enum PowerConfigurationFlag {
-    AdvancedPowerSave = Self(0b0000_0001),
-    FifoSelfWakeUp = Self(0b0000_0010),
+    AdvancedPowerSave = 0b0000_0001,
+    FifoSelfWakeUp = 0b0000_0010,
 }
 
+/// Default I2C address of the chip.
 const DEFAULT_ADDRESS: u8 = 0x18;
+/// Size of burst data for loading the config file in bytes.
 const READ_WRITE_LEN: usize = 0x08;
+/// Acceleration due to Earth gravity in m/s^2.
 const GRAVITY_EARTH: f32 = 9.80665;
 
 /// General accelerometer error.
@@ -347,12 +349,13 @@ impl Initialized for PowerSave {}
 /// state at every moment using type states, which are zero
 /// cost abstractions.
 pub struct Bma423<I2C, S> {
-    /// I2C address
+    /// I2C address.
     address: u8,
-    /// I2C peripheral
+    /// I2C peripheral.
     i2c: I2C,
-    /// Current configuration
+    /// Current configuration.
     config: Config,
+    /// State of the chip.
     #[allow(dead_code)]
     state: S,
 }
@@ -505,7 +508,7 @@ impl<I2C: I2c> Bma423<I2C, Uninitialized> {
         delay.delay_ms(1);
 
         // Disable advanced power saving mode
-        self.set_power_config(PowerConfigurationFlag::all(), false)?;
+        self.set_power_config(PowerConfigurationFlag::all_bits(), false)?;
 
         // Wait a bit
         delay.delay_us(500);
@@ -565,9 +568,9 @@ impl<I2C: I2c> Bma423<I2C, FullPower> {
     // features are implemented.
     /* pub fn read_features_mem(&mut self) -> Result<[u8; FEATURE_SIZE], Error<I2C::Error>> {
         let mut feature_config: [u8; FEATURE_SIZE] = [0; FEATURE_SIZE];
-        self.write_read(Reg::FeatureConfig, &mut feature_config)?;
+        self.read_register_bytes(Reg::FeatureConfig, &mut feature_config)?;
         Ok(feature_config)
-    }*/
+    } */
 
     /// Transitions to advanced power save mode.
     pub fn power_save_mode(self) -> Result<Bma423<I2C, PowerSave>, Error<I2C::Error>> {
@@ -647,7 +650,7 @@ impl<I2C: I2c, S: Initialized> Bma423<I2C, S> {
     ///
     /// - `line` Which interrupt line to configure.
     /// - `direction` Whether to configure the interrupt line as
-    /// an input or an output.
+    ///   an input or an output.
     pub fn set_interrupt_config(
         &mut self,
         line: InterruptLine,
@@ -735,9 +738,9 @@ impl<I2C: I2c, S: Initialized> Bma423<I2C, S> {
         let mut data: [u8; 6] = [0; 6];
         self.read_register_bytes(Reg::AccXLSB, &mut data)?;
 
-        let x: i16 = ((((data[1] as i16) << 8) as i16) | (data[0] as i16)) / 0x10;
-        let y: i16 = ((((data[3] as i16) << 8) as i16) | (data[2] as i16)) / 0x10;
-        let z: i16 = ((((data[5] as i16) << 8) as i16) | (data[4] as i16)) / 0x10;
+        let x: i16 = (((data[1] as i16) << 8) | (data[0] as i16)) / 0x10;
+        let y: i16 = (((data[3] as i16) << 8) | (data[2] as i16)) / 0x10;
+        let z: i16 = (((data[5] as i16) << 8) | (data[4] as i16)) / 0x10;
 
         let range = self.config.range.as_float();
 
@@ -786,6 +789,7 @@ impl<I2C: I2c, S: Initialized> Accelerometer for Bma423<I2C, S> {
     }
 }
 
+/// Converts fixed point to a float for a given acceleration range and bit depth.
 #[inline(always)]
 fn lsb_to_ms2(val: i16, g_range: f32, bit_width: u8) -> f32 {
     let half_scale: f32 = (1 << bit_width) as f32 / 2.0;
